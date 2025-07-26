@@ -27,6 +27,7 @@ app.get('/lugares', async (req, res) => {
       params: { data: query },
     });
 
+    // Enriquecer lugares
     const lugares = response.data.elements
       .filter(lugar => lugar.tags && lugar.tags.name)
       .map(lugar => ({
@@ -44,7 +45,21 @@ app.get('/lugares', async (req, res) => {
         descripcion: lugar.tags.description || 'Sin descripción',
       }));
 
-    res.json(lugares);
+    // Función para filtrar y priorizar los mejores lugares
+    const filtrarYPriorizar = (lugares) => {
+      const completos = lugares.filter(lugar =>
+        lugar.cocina !== 'No especificado' &&
+        lugar.horario !== 'No disponible' &&
+        (lugar.sitioWeb !== 'No disponible' || lugar.telefono !== 'No disponible')
+      );
+
+      const incompletos = lugares.filter(lugar => !completos.includes(lugar));
+      return [...completos, ...incompletos];
+    };
+
+    const lugaresFiltrados = filtrarYPriorizar(lugares);
+    res.json(lugaresFiltrados);
+
   } catch (error) {
     console.error('Error Overpass:', error.message);
     res.status(500).json({ error: 'No se pudo obtener datos' });
