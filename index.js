@@ -1,3 +1,4 @@
+// index.js
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -7,12 +8,10 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Ruta para probar que Render funciona
 app.get('/', (req, res) => {
   res.send('Servidor de intermediario activo desde Render');
 });
 
-// Ruta principal
 app.get('/lugares', async (req, res) => {
   const { categoria, lat, lon } = req.query;
 
@@ -20,7 +19,6 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
-  // Cálculo dinámico de los bordes del área de búsqueda
   const delta = 0.01;
   const minLat = parseFloat(lat) - delta;
   const maxLat = parseFloat(lat) + delta;
@@ -33,39 +31,37 @@ app.get('/lugares', async (req, res) => {
     out body;
   `;
 
-  const url = 'https://overpass-api.de/api/interpreter';
-
   try {
-    const response = await axios.get(url, { params: { data: query } });
+    const response = await axios.get('https://overpass-api.de/api/interpreter', {
+      params: { data: query }
+    });
 
     const lugares = response.data.elements
-      .filter(lugar => lugar.tags && lugar.tags.name)
-      .map(lugar => ({
-        nombre: lugar.tags.name || 'Sin nombre',
+      .filter(el => el.tags && el.tags.name)
+      .map(el => ({
+        nombre: el.tags.name || 'Sin nombre',
         categoria,
-        lat: lugar.lat,
-        lon: lugar.lon,
-        direccion: lugar.tags['addr:street'] || 'Dirección no disponible',
-        cocina: lugar.tags.cuisine || 'No especificado',
-        telefono: lugar.tags.phone || 'No disponible',
-        horario: lugar.tags.opening_hours || 'No disponible',
-        sitioWeb: lugar.tags.website || 'No disponible',
-        precios: lugar.tags.fee || 'No especificado',
-        accesibleSillaRuedas: lugar.tags.wheelchair || 'Desconocido',
-        descripcion: lugar.tags.description || 'Sin descripción',
+        lat: el.lat,
+        lon: el.lon,
+        direccion: el.tags['addr:street'] || 'Dirección no disponible',
+        cocina: el.tags.cuisine || 'No especificado',
+        telefono: el.tags.phone || 'No disponible',
+        horario: el.tags.opening_hours || 'No disponible',
+        sitioWeb: el.tags.website || 'No disponible',
+        precios: el.tags.fee || 'No especificado',
+        accesibleSillaRuedas: el.tags.wheelchair || 'Desconocido',
+        descripcion: el.tags.description || 'Sin descripción',
       }));
 
-    const filtrarYPriorizar = (lugares) => {
-      const completos = lugares.filter(lugar =>
-        lugar.cocina !== 'No especificado' &&
-        lugar.horario !== 'No disponible' &&
-        (lugar.sitioWeb !== 'No disponible' || lugar.telefono !== 'No disponible')
-      );
-      const incompletos = lugares.filter(lugar => !completos.includes(lugar));
-      return [...completos, ...incompletos];
-    };
+    // Prioriza lugares con info completa
+    const completos = lugares.filter(lugar =>
+      lugar.cocina !== 'No especificado' &&
+      lugar.horario !== 'No disponible' &&
+      (lugar.sitioWeb !== 'No disponible' || lugar.telefono !== 'No disponible')
+    );
+    const incompletos = lugares.filter(lugar => !completos.includes(lugar));
 
-    res.json(filtrarYPriorizar(lugares));
+    res.json([...completos, ...incompletos]);
   } catch (error) {
     console.error('Error Overpass:', error.message);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
