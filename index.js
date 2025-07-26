@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -8,7 +7,6 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Endpoint para consultar lugares por categoría y coordenadas
 app.get('/lugares', async (req, res) => {
   const { categoria, minLat, minLon, maxLat, maxLon } = req.query;
 
@@ -17,9 +15,9 @@ app.get('/lugares', async (req, res) => {
   }
 
   const query = `
-    [out:json];
+    [out:json][timeout:25];
     node[${categoria}](${minLat},${minLon},${maxLat},${maxLon});
-    out;
+    out body;
   `;
 
   const url = 'https://overpass-api.de/api/interpreter';
@@ -31,13 +29,19 @@ app.get('/lugares', async (req, res) => {
 
     const lugares = response.data.elements
       .filter(lugar => lugar.tags && lugar.tags.name)
-      .slice(0, 3) // Limitamos a 3 lugares
       .map(lugar => ({
         nombre: lugar.tags.name || 'Sin nombre',
         categoria: categoria,
         lat: lugar.lat,
         lon: lugar.lon,
         direccion: lugar.tags['addr:street'] || 'Dirección no disponible',
+        cocina: lugar.tags.cuisine || 'No especificado',
+        telefono: lugar.tags.phone || 'No disponible',
+        horario: lugar.tags.opening_hours || 'No disponible',
+        sitioWeb: lugar.tags.website || 'No disponible',
+        precios: lugar.tags.fee || 'No especificado',
+        accesibleSillaRuedas: lugar.tags.wheelchair || 'Desconocido',
+        descripcion: lugar.tags.description || 'Sin descripción',
       }));
 
     res.json(lugares);
