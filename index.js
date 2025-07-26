@@ -7,17 +7,25 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 
-// Ruta raíz para Render
+// Ruta para probar que Render funciona
 app.get('/', (req, res) => {
-  res.send('Servidor de intermediario activo');
+  res.send('Servidor de intermediario activo desde Render');
 });
 
+// Ruta principal
 app.get('/lugares', async (req, res) => {
-  const { categoria, minLat, minLon, maxLat, maxLon } = req.query;
+  const { categoria, lat, lon } = req.query;
 
-  if (!categoria || !minLat || !minLon || !maxLat || !maxLon) {
-    return res.status(400).json({ error: 'Faltan parámetros' });
+  if (!categoria || !lat || !lon) {
+    return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
+
+  // Cálculo dinámico de los bordes del área de búsqueda
+  const delta = 0.01;
+  const minLat = parseFloat(lat) - delta;
+  const maxLat = parseFloat(lat) + delta;
+  const minLon = parseFloat(lon) - delta;
+  const maxLon = parseFloat(lon) + delta;
 
   const query = `
     [out:json][timeout:25];
@@ -58,10 +66,9 @@ app.get('/lugares', async (req, res) => {
     };
 
     res.json(filtrarYPriorizar(lugares));
-
   } catch (error) {
     console.error('Error Overpass:', error.message);
-    res.status(500).json({ error: 'No se pudo obtener datos' });
+    res.status(500).json({ error: 'Error al obtener datos de Overpass' });
   }
 });
 
