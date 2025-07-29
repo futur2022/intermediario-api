@@ -36,7 +36,7 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
   }
 
-  const delta = 0.05; // 5 km aprox
+  const delta = 0.1; // 10 km aprox
   const minLat = parseFloat(lat) - delta;
   const maxLat = parseFloat(lat) + delta;
   const minLon = parseFloat(lon) - delta;
@@ -53,6 +53,8 @@ app.get('/lugares', async (req, res) => {
     );
     out center tags;
   `;
+
+  console.log("Consulta Overpass:", query);
 
   try {
     const response = await axios.get('https://overpass-api.de/api/interpreter', {
