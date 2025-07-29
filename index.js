@@ -18,7 +18,9 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
-  const [clave, valor] = categoria.split('=');
+  // Decodificamos la categoría para que '=' no esté codificado
+  const categoriaDecodificada = decodeURIComponent(categoria);
+  const [clave, valor] = categoriaDecodificada.split('=');
 
   if (!clave || !valor) {
     return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
@@ -45,7 +47,7 @@ app.get('/lugares', async (req, res) => {
       .filter(el => el.tags && el.tags.name)
       .map(el => ({
         nombre: el.tags.name || 'Sin nombre',
-        categoria,
+        categoria: categoriaDecodificada,
         lat: el.lat,
         lon: el.lon,
         direccion: el.tags['addr:street'] || 'Dirección no disponible',
