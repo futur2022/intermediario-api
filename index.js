@@ -18,15 +18,13 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
-  // Decodificamos la categoría para que '=' no esté codificado
-  const categoriaDecodificada = decodeURIComponent(categoria);
-  const [clave, valor] = categoriaDecodificada.split('=');
+  const [clave, valor] = categoria.split('=');
 
   if (!clave || !valor) {
     return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
   }
 
-  const delta = 0.01;
+  const delta = 0.02; // rango más amplio para más resultados
   const minLat = parseFloat(lat) - delta;
   const maxLat = parseFloat(lat) + delta;
   const minLon = parseFloat(lon) - delta;
@@ -34,8 +32,12 @@ app.get('/lugares', async (req, res) => {
 
   const query = `
     [out:json][timeout:25];
-    node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-    out body;
+    (
+      node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+    );
+    out center tags;
   `;
 
   try {
@@ -47,15 +49,16 @@ app.get('/lugares', async (req, res) => {
       .filter(el => el.tags && el.tags.name)
       .map(el => ({
         nombre: el.tags.name || 'Sin nombre',
-        categoria: categoriaDecodificada,
-        lat: el.lat,
-        lon: el.lon,
+        categoria,
+        lat: el.lat || (el.center && el.center.lat),
+        lon: el.lon || (el.center && el.center.lon),
         direccion: el.tags['addr:street'] || 'Dirección no disponible',
         telefono: el.tags.phone || 'No disponible',
         horario: el.tags.opening_hours || 'No disponible',
         sitioWeb: el.tags.website || 'No disponible',
         descripcion: el.tags.description || 'Sin descripción',
-      }));
+      }))
+      .filter(lugar => lugar.lat && lugar.lon); // solo lugares con coordenadas válidas
 
     res.json(lugares);
   } catch (error) {
