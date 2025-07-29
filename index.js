@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -9,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 
 app.get('/', (req, res) => {
-  res.send('Servidor de intermediario activo desde Render');
+  res.send('Servidor de intermediario activo');
 });
 
 app.get('/lugares', async (req, res) => {
@@ -17,6 +16,12 @@ app.get('/lugares', async (req, res) => {
 
   if (!categoria || !lat || !lon) {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
+  }
+
+  const [clave, valor] = categoria.split('=');
+
+  if (!clave || !valor) {
+    return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
   }
 
   const delta = 0.01;
@@ -27,7 +32,7 @@ app.get('/lugares', async (req, res) => {
 
   const query = `
     [out:json][timeout:25];
-    node[${categoria}](${minLat},${minLon},${maxLat},${maxLon});
+    node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
     out body;
   `;
 
@@ -44,24 +49,13 @@ app.get('/lugares', async (req, res) => {
         lat: el.lat,
         lon: el.lon,
         direccion: el.tags['addr:street'] || 'Dirección no disponible',
-        cocina: el.tags.cuisine || 'No especificado',
         telefono: el.tags.phone || 'No disponible',
         horario: el.tags.opening_hours || 'No disponible',
         sitioWeb: el.tags.website || 'No disponible',
-        precios: el.tags.fee || 'No especificado',
-        accesibleSillaRuedas: el.tags.wheelchair || 'Desconocido',
         descripcion: el.tags.description || 'Sin descripción',
       }));
 
-    // Prioriza lugares con info completa
-    const completos = lugares.filter(lugar =>
-      lugar.cocina !== 'No especificado' &&
-      lugar.horario !== 'No disponible' &&
-      (lugar.sitioWeb !== 'No disponible' || lugar.telefono !== 'No disponible')
-    );
-    const incompletos = lugares.filter(lugar => !completos.includes(lugar));
-
-    res.json([...completos, ...incompletos]);
+    res.json(lugares);
   } catch (error) {
     console.error('Error Overpass:', error.message);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
