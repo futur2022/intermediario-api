@@ -14,24 +14,29 @@ app.get('/', (req, res) => {
 
 app.get('/lugares', async (req, res) => {
   let { categoria, lat, lon } = req.query;
-  console.log("Consulta recibida:", { categoria, lat, lon });
+  console.log("[intermediario] Consulta recibida:", { categoria, lat, lon });
 
   if (!categoria || !lat || !lon) {
+    console.log("[intermediario] Error: faltan parámetros categoria, lat o lon");
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
   try {
     categoria = decodeURIComponent(categoria);
-  } catch {
-    console.warn('No se pudo decodificar categoría');
+    console.log("[intermediario] Categoría decodificada:", categoria);
+  } catch (error) {
+    console.warn("[intermediario] No se pudo decodificar categoría:", error.message);
   }
 
   const [clave, valor] = categoria.split('=');
+  console.log("[intermediario] Clave y valor de categoría:", clave, valor);
+
   if (!clave || !valor) {
+    console.log("[intermediario] Error: categoría debe tener formato clave=valor");
     return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
   }
 
-  const delta = 0.1; // +/-10 km
+  const delta = 0.1; // +/- 10 km de rango
   const minLat = parseFloat(lat) - delta;
   const maxLat = parseFloat(lat) + delta;
   const minLon = parseFloat(lon) - delta;
@@ -46,14 +51,16 @@ app.get('/lugares', async (req, res) => {
     );
     out center tags;
   `;
-  console.log("Consulta Overpass:", query);
+
+  console.log("[intermediario] Consulta Overpass generada:\n", query);
 
   try {
     const response = await axios.get('https://overpass-api.de/api/interpreter', {
       params: { data: query }
     });
+
     const elementos = response.data.elements || [];
-    console.log('Elementos recibidos:', elementos.length);
+    console.log("[intermediario] Elementos recibidos de Overpass:", elementos.length);
 
     const lugares = elementos
       .filter(el => el.tags && el.tags.name)
@@ -69,10 +76,10 @@ app.get('/lugares', async (req, res) => {
         descripcion: el.tags.description || 'Sin descripción',
       }));
 
-    console.log('Lugares filtrados:', lugares.length);
+    console.log("[intermediario] Lugares filtrados y formateados:", lugares.length);
     res.json(lugares);
   } catch (error) {
-    console.error('Error Overpass:', error.message);
+    console.error("[intermediario] Error al consultar Overpass:", error.message);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
   }
 });
