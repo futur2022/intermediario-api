@@ -27,7 +27,6 @@ app.get('/lugares', async (req, res) => {
   let { categoria, lat, lon, horario, estadoAnimo, gasto } = req.query;
   console.log("Consulta recibida:", { categoria, lat, lon, horario, estadoAnimo, gasto });
 
-  // Validaciones básicas
   if (!categoria || !lat || !lon) {
     return res.status(400).json({ error: '❌ Faltan parámetros: categoria, lat o lon.' });
   }
@@ -41,22 +40,18 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: '❌ Parámetros inválidos.' });
   }
 
-  // Actualizar métricas por categoría
   metrics.perCategory[categoria] = (metrics.perCategory[categoria] || 0) + 1;
 
-  // Rango de búsqueda: medio local (~5 km)
   const delta = 0.05;
   const minLat = latNum - delta, maxLat = latNum + delta;
   const minLon = lonNum - delta, maxLon = lonNum + delta;
 
-  // Mejorar cache key incluyendo todos los parámetros relevantes
   const cacheKey = `${categoria}_${latNum}_${lonNum}_${horario || ''}_${estadoAnimo || ''}_${gasto || ''}`;
   if (cache.has(cacheKey)) {
     console.log('💾 Sirviendo desde cache');
     return res.json(cache.get(cacheKey));
   }
 
-  // Construir consulta Overpass
   const query = `
     [out:json][timeout:25];
     (
@@ -77,7 +72,8 @@ app.get('/lugares', async (req, res) => {
     const lugares = elementos
       .filter(el => el.tags && el.tags.name)
       .filter(el => {
-        if (!el.tags.opening_hours || !horario) return true;
+        if (!horario) return true;              // Si no hay filtro horario, deja pasar todo
+        if (!el.tags.opening_hours) return true; // Deja pasar si no tiene horario definido
         try {
           const oh = new opening_hours(el.tags.opening_hours);
           const hora = ahora.getHours();
@@ -86,7 +82,7 @@ app.get('/lugares', async (req, res) => {
                      || (horario === 'noche' && hora >= 18);
           return rango && oh.getState();
         } catch {
-          return false;
+          return true; // Si error leyendo horario, pasa el lugar
         }
       })
       .map(el => {
@@ -111,7 +107,6 @@ app.get('/lugares', async (req, res) => {
       })
       .sort((a, b) => b.puntuacion - a.puntuacion);
 
-    // Limitar a 4 resultados antes de cachear y responder
     const lugaresLimitados = lugares.slice(0, 4);
     cache.set(cacheKey, lugaresLimitados);
 
@@ -124,12 +119,10 @@ app.get('/lugares', async (req, res) => {
   }
 });
 
-// Endpoint para ver métricas
 app.get('/metrics', (req, res) => {
   res.json(metrics);
 });
 
-// Endpoint para limpiar cache manualmente (útil en desarrollo)
 app.get('/limpiar-cache', (req, res) => {
   cache.flushAll();
   res.send('Cache limpiado');
