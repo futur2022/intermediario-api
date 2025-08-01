@@ -1,9 +1,22 @@
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+
+app.get('/', (req, res) => {
+  res.send('Servidor de intermediario activo');
+});
+
 app.get('/lugares', async (req, res) => {
   let { categoria, lat, lon, horario, estadoAnimo, gasto } = req.query;
   console.log("Consulta recibida:", { categoria, lat, lon, horario, estadoAnimo, gasto });
 
   if (!categoria || !lat || !lon) {
-    return res.status(400).json({ error: 'Faltan parámetros obligatorios: categoria, lat o lon' });
+    return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
   try {
@@ -12,20 +25,26 @@ app.get('/lugares', async (req, res) => {
     console.warn('No se pudo decodificar categoría');
   }
 
-  // Validar solo la categoría que debe tener formato clave=valor
+  // Validar formato clave=valor para categoria
+  if (!categoria.includes('=')) {
+    return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
+  }
   const [clave, valor] = categoria.split('=');
   if (!clave || !valor) {
     return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
   }
 
-  // Aquí podrías usar horario, estadoAnimo, gasto para filtrar o loguear, 
-  // pero si no los usas aún puedes ignorarlos o incluirlos en la respuesta si quieres.
+  const latNum = parseFloat(lat);
+  const lonNum = parseFloat(lon);
+  if (isNaN(latNum) || isNaN(lonNum)) {
+    return res.status(400).json({ error: 'Latitud o longitud inválidas' });
+  }
 
   const delta = 0.1; // +/-10 km
-  const minLat = parseFloat(lat) - delta;
-  const maxLat = parseFloat(lat) + delta;
-  const minLon = parseFloat(lon) - delta;
-  const maxLon = parseFloat(lon) + delta;
+  const minLat = latNum - delta;
+  const maxLat = latNum + delta;
+  const minLon = lonNum - delta;
+  const maxLon = lonNum + delta;
 
   const query = `
     [out:json][timeout:25];
@@ -57,10 +76,6 @@ app.get('/lugares', async (req, res) => {
         horario: el.tags.opening_hours || 'No disponible',
         sitioWeb: el.tags.website || 'No disponible',
         descripcion: el.tags.description || 'Sin descripción',
-        // Opcional: podrías agregar aquí la info recibida del usuario si quieres
-        estadoAnimo,
-        gasto,
-        horarioUsuario: horario
       }));
 
     console.log('Lugares filtrados:', lugares.length);
@@ -69,4 +84,8 @@ app.get('/lugares', async (req, res) => {
     console.error('Error Overpass:', error.message);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
   }
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
