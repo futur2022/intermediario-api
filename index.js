@@ -1,4 +1,3 @@
-// intermediario.js (Node.js + Express)
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -13,8 +12,9 @@ app.get('/', (req, res) => {
 });
 
 app.get('/lugares', async (req, res) => {
-  let { categoria, lat, lon } = req.query;
-  console.log("Consulta recibida:", { categoria, lat, lon });
+  let { categoria, lat, lon, horario, estadoAnimo, gasto } = req.query;
+
+  console.log("Consulta recibida:", { categoria, lat, lon, horario, estadoAnimo, gasto });
 
   if (!categoria || !lat || !lon) {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
@@ -36,6 +36,8 @@ app.get('/lugares', async (req, res) => {
   const maxLat = parseFloat(lat) + delta;
   const minLon = parseFloat(lon) - delta;
   const maxLon = parseFloat(lon) + delta;
+
+  // Aquí podrías agregar lógica para filtrar según horario, estadoAnimo y gasto si quieres.
 
   const query = `
     [out:json][timeout:25];
