@@ -8,10 +8,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(cors());
 
-// 9. Cache en memoria con TTL de 5 minutos
+// Cache en memoria con TTL de 5 minutos
 const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
-// 10. Métricas simples en memoria
+// Métricas simples en memoria
 const metrics = {
   totalRequests: 0,
   perCategory: {},
@@ -23,8 +23,9 @@ app.get('/', (req, res) => {
 
 app.get('/lugares', async (req, res) => {
   metrics.totalRequests++;
-  let { categoria, lat, lon, horario } = req.query;
-  console.log("Consulta recibida:", { categoria, lat, lon, horario });
+
+  let { categoria, lat, lon, horario, estadoAnimo, gasto } = req.query;
+  console.log("Consulta recibida:", { categoria, lat, lon, horario, estadoAnimo, gasto });
 
   // Validaciones básicas
   if (!categoria || !lat || !lon) {
@@ -43,13 +44,13 @@ app.get('/lugares', async (req, res) => {
   // Actualizar métricas por categoría
   metrics.perCategory[categoria] = (metrics.perCategory[categoria] || 0) + 1;
 
-  // 3. Rango de búsqueda: medio local (~5 km)
+  // Rango de búsqueda: medio local (~5 km)
   const delta = 0.05;
   const minLat = latNum - delta, maxLat = latNum + delta;
   const minLon = lonNum - delta, maxLon = lonNum + delta;
 
-  // Cache key
-  const cacheKey = `${categoria}_${latNum}_${lonNum}_${horario}`;
+  // Mejorar cache key incluyendo todos los parámetros relevantes
+  const cacheKey = `${categoria}_${latNum}_${lonNum}_${horario || ''}_${estadoAnimo || ''}_${gasto || ''}`;
   if (cache.has(cacheKey)) {
     console.log('💾 Sirviendo desde cache');
     return res.json(cache.get(cacheKey));
@@ -72,7 +73,6 @@ app.get('/lugares', async (req, res) => {
     });
     const elementos = response.data.elements || [];
 
-    // 1 y 2. Filtrar por opening_hours + puntuación por etiquetas
     const ahora = new Date();
     const lugares = elementos
       .filter(el => el.tags && el.tags.name)
@@ -80,22 +80,19 @@ app.get('/lugares', async (req, res) => {
         if (!el.tags.opening_hours || !horario) return true;
         try {
           const oh = new opening_hours(el.tags.opening_hours);
-          // determinar mañana/tarde/noche:
           const hora = ahora.getHours();
           const rango = (horario === 'mañana' && hora < 12)
                      || (horario === 'tarde' && hora >= 12 && hora < 18)
                      || (horario === 'noche' && hora >= 18);
-          return rango && oh.getState(); 
+          return rango && oh.getState();
         } catch {
           return false;
         }
       })
       .map(el => {
-        // 4. Priorizar etiquetas turísticas
         const tourismScore = ['tourism', 'historic', 'leisure'].reduce((sum, k) =>
           sum + (el.tags[k] ? 1 : 0), 0
         );
-        // 5. Añadir imagen si existe
         const imagen = el.tags.image || el.tags.wikimedia_commons || null;
         return {
           nombre: el.tags.name,
@@ -107,20 +104,19 @@ app.get('/lugares', async (req, res) => {
           horario: el.tags.opening_hours || 'No disponible',
           sitioWeb: el.tags.website || 'No disponible',
           descripcion: el.tags.description || 'Sin descripción',
-          puntuacion: Object.keys(el.tags).length + tourismScore * 2, 
+          puntuacion: Object.keys(el.tags).length + tourismScore * 2,
           imagen,
-          distancia: null, // explicado en el punto 3
+          distancia: null,
         };
       })
-      // 3. (Explicación:) podrías calcular aquí la distancia real con Haversine y usarla en "distancia"
-      .sort((a, b) => b.puntuacion - a.puntuacion)
-      .slice(0, 4); // limitar a 4 resultados
+      .sort((a, b) => b.puntuacion - a.puntuacion);
 
-    // Guardar en cache
-    cache.set(cacheKey, lugares);
+    // Limitar a 4 resultados antes de cachear y responder
+    const lugaresLimitados = lugares.slice(0, 4);
+    cache.set(cacheKey, lugaresLimitados);
 
-    console.log('Lugares filtrados y ordenados:', lugares.length);
-    res.json(lugares);
+    console.log('Lugares filtrados y ordenados:', lugaresLimitados.length);
+    res.json(lugaresLimitados);
 
   } catch (error) {
     console.error('Error Overpass:', error.message);
@@ -131,6 +127,12 @@ app.get('/lugares', async (req, res) => {
 // Endpoint para ver métricas
 app.get('/metrics', (req, res) => {
   res.json(metrics);
+});
+
+// Endpoint para limpiar cache manualmente (útil en desarrollo)
+app.get('/limpiar-cache', (req, res) => {
+  cache.flushAll();
+  res.send('Cache limpiado');
 });
 
 app.listen(PORT, () => {
