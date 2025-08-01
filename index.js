@@ -1,132 +1,102 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
+const NodeCache = require('node-cache');
 const opening_hours = require('opening_hours'); // npm install opening_hours
-const geolib = require('geolib'); // npm install geolib
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 app.use(cors());
 
-// Cache simple en memoria para respuestas (clave: JSON.stringify de parámetros)
-const cache = new Map();
-// Registro de métricas: contador de consultas por categoría
-const metricas = {};
+// 9. Cache en memoria con TTL de 5 minutos
+const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
+// 10. Métricas simples en memoria
+const metrics = {
+  totalRequests: 0,
+  perCategory: {},
+};
 
 app.get('/', (req, res) => {
   res.send('Servidor de intermediario activo');
 });
 
 app.get('/lugares', async (req, res) => {
+  metrics.totalRequests++;
+  let { categoria, lat, lon, horario } = req.query;
+  console.log("Consulta recibida:", { categoria, lat, lon, horario });
+
+  // Validaciones básicas
+  if (!categoria || !lat || !lon) {
+    return res.status(400).json({ error: '❌ Faltan parámetros: categoria, lat o lon.' });
+  }
+  try { categoria = decodeURIComponent(categoria); } catch {}
+  if (!categoria.includes('=')) {
+    return res.status(400).json({ error: '❌ Formato de categoría inválido. Debe ser clave=valor.' });
+  }
+  const [clave, valor] = categoria.split('=');
+  const latNum = parseFloat(lat), lonNum = parseFloat(lon);
+  if (!clave || !valor || isNaN(latNum) || isNaN(lonNum)) {
+    return res.status(400).json({ error: '❌ Parámetros inválidos.' });
+  }
+
+  // Actualizar métricas por categoría
+  metrics.perCategory[categoria] = (metrics.perCategory[categoria] || 0) + 1;
+
+  // 3. Rango de búsqueda: medio local (~5 km)
+  const delta = 0.05;
+  const minLat = latNum - delta, maxLat = latNum + delta;
+  const minLon = lonNum - delta, maxLon = lonNum + delta;
+
+  // Cache key
+  const cacheKey = `${categoria}_${latNum}_${lonNum}_${horario}`;
+  if (cache.has(cacheKey)) {
+    console.log('💾 Sirviendo desde cache');
+    return res.json(cache.get(cacheKey));
+  }
+
+  // Construir consulta Overpass
+  const query = `
+    [out:json][timeout:25];
+    (
+      node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+    );
+    out center tags;
+  `;
+
   try {
-    let { categoria, lat, lon, horario, estadoAnimo, gasto } = req.query;
-    console.log("Consulta recibida:", { categoria, lat, lon, horario, estadoAnimo, gasto });
-
-    if (!categoria || !lat || !lon) {
-      return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
-    }
-
-    try {
-      categoria = decodeURIComponent(categoria);
-    } catch {
-      console.warn('No se pudo decodificar categoría');
-    }
-
-    if (!categoria.includes('=')) {
-      return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
-    }
-    const [clave, valor] = categoria.split('=');
-    if (!clave || !valor) {
-      return res.status(400).json({ error: 'Categoría debe tener formato clave=valor' });
-    }
-
-    const latNum = parseFloat(lat);
-    const lonNum = parseFloat(lon);
-    if (isNaN(latNum) || isNaN(lonNum)) {
-      return res.status(400).json({ error: 'Latitud o longitud inválidas' });
-    }
-
-    // Registro métricas
-    metricas[categoria] = (metricas[categoria] || 0) + 1;
-
-    // Cache key
-    const cacheKey = JSON.stringify({ categoria, lat: latNum, lon: lonNum, horario, estadoAnimo, gasto });
-    if (cache.has(cacheKey)) {
-      console.log('Respuesta desde cache');
-      return res.json(cache.get(cacheKey));
-    }
-
-    // Rango ~5km
-    const delta = 0.05;
-    const minLat = latNum - delta;
-    const maxLat = latNum + delta;
-    const minLon = lonNum - delta;
-    const maxLon = lonNum + delta;
-
-    const query = `
-      [out:json][timeout:25];
-      (
-        node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-        way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-        relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-      );
-      out center tags;
-    `;
-    console.log("Consulta Overpass:", query);
-
     const response = await axios.get('https://overpass-api.de/api/interpreter', {
       params: { data: query }
     });
     const elementos = response.data.elements || [];
-    console.log('Elementos recibidos:', elementos.length);
 
-    // Hora actual para filtrado horario
+    // 1 y 2. Filtrar por opening_hours + puntuación por etiquetas
     const ahora = new Date();
-    // Para interpretar horario seleccionado ("mañana", "tarde", "noche") definimos rangos
-    const horariosRango = {
-      manana: [6, 12],
-      tarde: [12, 18],
-      noche: [18, 24]
-    };
-    const horarioKey = horario?.toLowerCase() || null;
-    const horaActual = ahora.getHours();
-
-    // Función para saber si está abierto según opening_hours y horario usuario
-    function estaAbierto(openingHoursStr) {
-      if (!openingHoursStr) return true; // si no tiene etiqueta, asumimos abierto
-      try {
-        const oh = new opening_hours(openingHoursStr);
-        if (!oh.getState()) return false; // cerrado ahora mismo
-        if (!horarioKey || !horariosRango[horarioKey]) return true; // no filtramos por horario
-
-        // Comprobar si la hora actual está dentro del rango horario usuario
-        const [inicio, fin] = horariosRango[horarioKey];
-        return horaActual >= inicio && horaActual < fin;
-      } catch {
-        return true; // si hay error en parsing, asumimos abierto
-      }
-    }
-
-    // Etiquetas turísticas preferidas para ponderar mejor
-    const etiquetasTuristicas = [
-      'tourism', 'historic', 'leisure', 'amenity', 'attraction'
-    ];
-
-    // Procesamos lugares
-    let lugares = elementos
+    const lugares = elementos
       .filter(el => el.tags && el.tags.name)
+      .filter(el => {
+        if (!el.tags.opening_hours || !horario) return true;
+        try {
+          const oh = new opening_hours(el.tags.opening_hours);
+          // determinar mañana/tarde/noche:
+          const hora = ahora.getHours();
+          const rango = (horario === 'mañana' && hora < 12)
+                     || (horario === 'tarde' && hora >= 12 && hora < 18)
+                     || (horario === 'noche' && hora >= 18);
+          return rango && oh.getState(); 
+        } catch {
+          return false;
+        }
+      })
       .map(el => {
-        const dist = geolib.getDistance(
-          { latitude: latNum, longitude: lonNum },
-          { latitude: el.lat ?? el.center?.lat, longitude: el.lon ?? el.center?.lon }
+        // 4. Priorizar etiquetas turísticas
+        const tourismScore = ['tourism', 'historic', 'leisure'].reduce((sum, k) =>
+          sum + (el.tags[k] ? 1 : 0), 0
         );
-
-        // Contamos etiquetas turísticas que tenga
-        const turisticCount = etiquetasTuristicas.reduce((acc, key) => {
-          return acc + (el.tags[key] ? 1 : 0);
-        }, 0);
-
+        // 5. Añadir imagen si existe
+        const imagen = el.tags.image || el.tags.wikimedia_commons || null;
         return {
           nombre: el.tags.name,
           categoria,
@@ -137,44 +107,30 @@ app.get('/lugares', async (req, res) => {
           horario: el.tags.opening_hours || 'No disponible',
           sitioWeb: el.tags.website || 'No disponible',
           descripcion: el.tags.description || 'Sin descripción',
-          imagen: el.tags.image || el.tags.photo || el.tags['wikimedia_commons'] || null,
-          puntuacion: Object.keys(el.tags).length + turisticCount * 3, // +3 puntos por cada etiqueta turística para ponderar
-          distancia: dist, // en metros
-          abiertoAhora: estaAbierto(el.tags.opening_hours)
+          puntuacion: Object.keys(el.tags).length + tourismScore * 2, 
+          imagen,
+          distancia: null, // explicado en el punto 3
         };
-      });
+      })
+      // 3. (Explicación:) podrías calcular aquí la distancia real con Haversine y usarla en "distancia"
+      .sort((a, b) => b.puntuacion - a.puntuacion)
+      .slice(0, 4); // limitar a 4 resultados
 
-    // Filtrar solo lugares abiertos según horario usuario
-    lugares = lugares.filter(l => l.abiertoAhora);
-
-    // Ordenar primero por puntuación (más etiquetas + turísticas) y luego por distancia (más cerca)
-    lugares.sort((a, b) => {
-      if (b.puntuacion !== a.puntuacion) return b.puntuacion - a.puntuacion;
-      return a.distancia - b.distancia;
-    });
-
-    // Limitar a 4 resultados para no saturar
-    lugares = lugares.slice(0, 4);
-
-    // Si no hay lugares, sugerir mensaje amigable
-    if (lugares.length === 0) {
-      return res.json({
-        mensaje: 'No se encontraron lugares abiertos en la categoría y horario seleccionados. Prueba otro horario o categoría.',
-        lugares: []
-      });
-    }
-
-    // Guardar en cache (por 10 min)
+    // Guardar en cache
     cache.set(cacheKey, lugares);
-    setTimeout(() => cache.delete(cacheKey), 10 * 60 * 1000);
 
+    console.log('Lugares filtrados y ordenados:', lugares.length);
     res.json(lugares);
+
   } catch (error) {
-    console.error('Error en /lugares:', error.message);
-    res.status(500).json({
-      error: 'Error al obtener datos de Overpass o procesar la consulta, intenta de nuevo más tarde.'
-    });
+    console.error('Error Overpass:', error.message);
+    res.status(500).json({ error: '⚠️ Error al obtener datos de Overpass. Intenta más tarde.' });
   }
+});
+
+// Endpoint para ver métricas
+app.get('/metrics', (req, res) => {
+  res.json(metrics);
 });
 
 app.listen(PORT, () => {
