@@ -1,127 +1,170 @@
-app.get('/lugares', async (req, res) => {
-  metrics.totalRequests++;
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+const opening_hours = require('opening_hours');
 
-  let { categoria, lat, lon, horario, estadoAnimo, gasto } = req.query;
-  console.log("Consulta recibida:", { categoria, lat, lon, horario, estadoAnimo, gasto });
+const app = express();
+app.use(cors());
 
-  if (!categoria || !lat || !lon) {
-    return res.status(400).json({ error: '❌ Faltan parámetros: categoria, lat o lon.' });
-  }
-  try { categoria = decodeURIComponent(categoria); } catch {}
-  if (!categoria.includes('=')) {
-    return res.status(400).json({ error: '❌ Formato de categoría inválido. Debe ser clave=valor.' });
-  }
-  const [clave, valor] = categoria.split('=');
-  const latNum = parseFloat(lat), lonNum = parseFloat(lon);
-  if (!clave || !valor || isNaN(latNum) || isNaN(lonNum)) {
-    return res.status(400).json({ error: '❌ Parámetros inválidos.' });
-  }
+function filtrarPorHorario(elementos, horario) {
+  const ahora = new Date();
+  return elementos
+    .map(el => {
+      let motivoExclusion = '';
+      if (!el.tags || !el.tags.name) {
+        motivoExclusion = 'Sin nombre';
+        return { ...el, motivoExclusion };
+      }
+      if (!horario) return el;
 
-  metrics.perCategory[categoria] = (metrics.perCategory[categoria] || 0) + 1;
+      if (!el.tags.opening_hours) {
+        motivoExclusion = 'Sin horario declarado';
+        return { ...el, motivoExclusion };
+      }
 
-  const delta = 0.05;
-  const minLat = latNum - delta, maxLat = latNum + delta;
-  const minLon = lonNum - delta, maxLon = lonNum + delta;
-
-  // Cache key con filtro horario para resultados filtrados y sin filtrar
-  const cacheKeyHorario = `${categoria}_${latNum}_${lonNum}_${horario || ''}_filtered`;
-  const cacheKeyNoHorario = `${categoria}_${latNum}_${lonNum}_nohorario`;
-
-  // Función para filtrar por horario
-  function filtrarPorHorario(elementos) {
-    const ahora = new Date();
-    return elementos.filter(el => {
-      if (!el.tags || !el.tags.name) return false;
-      if (!horario) return true;
-      if (!el.tags.opening_hours) return true;
       try {
         const oh = new opening_hours(el.tags.opening_hours);
         const hora = ahora.getHours();
         const rango = (horario === 'mañana' && hora < 12)
                    || (horario === 'tarde' && hora >= 12 && hora < 18)
                    || (horario === 'noche' && hora >= 18);
-        return rango && oh.getState();
+
+        if (!rango || !oh.getState()) {
+          motivoExclusion = 'Cerrado en este horario';
+          return { ...el, motivoExclusion };
+        }
+
+        return el;
       } catch {
-        return true;
+        motivoExclusion = 'Error parsing horario';
+        return { ...el, motivoExclusion };
       }
-    });
+    })
+    .filter(el => !el.motivoExclusion);
+}
+
+app.get('/lugares', async (req, res) => {
+  const { categoria, lat, lon, horario } = req.query;
+  if (!categoria || !lat || !lon) {
+    return res.status(400).json({ error: '❌ Faltan parámetros requeridos' });
   }
+
+  const delta = 0.02;
+  const minLat = parseFloat(lat) - delta;
+  const maxLat = parseFloat(lat) + delta;
+  const minLon = parseFloat(lon) - delta;
+  const maxLon = parseFloat(lon) + delta;
+
+  const query = `
+    [out:json][timeout:25];
+    (
+      node[${categoria}](${minLat},${minLon},${maxLat},${maxLon});
+      way[${categoria}](${minLat},${minLon},${maxLat},${maxLon});
+    );
+    out center tags;
+  `;
 
   try {
-    let lugares = null;
-    let filtradoPorHorario = false;
+    const response = await axios.get('https://overpass-api.de/api/interpreter', {
+      params: { data: query }
+    });
+    const elementos = response.data.elements || [];
 
-    // Intentar usar cache con filtro horario
-    if (cache.has(cacheKeyHorario)) {
-      console.log('💾 Sirviendo desde cache (filtrado horario)');
-      lugares = cache.get(cacheKeyHorario);
-      filtradoPorHorario = true;
-    } else if (cache.has(cacheKeyNoHorario)) {
-      console.log('💾 Sirviendo desde cache (sin filtro horario)');
-      lugares = cache.get(cacheKeyNoHorario);
+    let filtrados = filtrarPorHorario(elementos, horario);
+    let filtradoPorHorario = true;
+
+    if (filtrados.length === 0 && horario) {
+      filtrados = elementos.filter(el => el.tags && el.tags.name);
       filtradoPorHorario = false;
-    } else {
-      // No hay cache, hacemos consulta Overpass
-      const query = `
-        [out:json][timeout:25];
-        (
-          node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-          way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-          relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-        );
-        out center tags;
-      `;
-      const response = await axios.get('https://overpass-api.de/api/interpreter', {
-        params: { data: query }
-      });
-      const elementos = response.data.elements || [];
-
-      // Primer intento: filtrar por horario
-      let filtrados = filtrarPorHorario(elementos);
-
-      if (filtrados.length === 0 && horario) {
-        // No hay resultados filtrados, relajar filtro y usar todos
-        filtrados = elementos.filter(el => el.tags && el.tags.name);
-        filtradoPorHorario = false;
-      } else {
-        filtradoPorHorario = true;
-      }
-
-      lugares = filtrados.map(el => {
-        const tourismScore = ['tourism', 'historic', 'leisure'].reduce((sum, k) =>
-          sum + (el.tags[k] ? 1 : 0), 0
-        );
-        const imagen = el.tags.image || el.tags.wikimedia_commons || null;
-        return {
-          nombre: el.tags.name,
-          categoria,
-          lat: el.lat ?? el.center?.lat,
-          lon: el.lon ?? el.center?.lon,
-          direccion: el.tags['addr:street'] || 'Dirección no disponible',
-          telefono: el.tags.phone || 'No disponible',
-          horario: el.tags.opening_hours || 'No disponible',
-          sitioWeb: el.tags.website || 'No disponible',
-          descripcion: el.tags.description || 'Sin descripción',
-          puntuacion: Object.keys(el.tags).length + tourismScore * 2,
-          imagen,
-          distancia: null,
-        };
-      }).sort((a, b) => b.puntuacion - a.puntuacion);
-
-      // Guardar en cache el resultado apropiado
-      if (filtradoPorHorario) {
-        cache.set(cacheKeyHorario, lugares.slice(0, 4));
-      } else {
-        cache.set(cacheKeyNoHorario, lugares.slice(0, 4));
-      }
-
-      lugares = lugares.slice(0, 4);
     }
 
-    res.json({ lugares, filtradoPorHorario });
+    const excluidos = elementos.filter(el => el.motivoExclusion);
 
+    const lugares = filtrados.slice(0, 4).map(el => ({
+      nombre: el.tags.name,
+      lat: el.lat ?? el.center?.lat,
+      lon: el.lon ?? el.center?.lon,
+      categoria: categoria,
+      descripcion: el.tags.description || '',
+      imagen: el.tags.image || el.tags.wikimedia_commons || null
+    }));
+
+    res.json({
+      lugares,
+      filtradoPorHorario,
+      excluidos: excluidos.map(e => ({
+        nombre: e.tags?.name || 'Sin nombre',
+        motivo: e.motivoExclusion
+      }))
+    });
   } catch (error) {
-    console.error('Error Overpass:', error.message);
-    res.status(500).json({ error: '⚠️ Error al obtener datos de Overpass. Intenta más tarde.' });
+    console.error('❌ Error al consultar Overpass:', error.message);
+    res.status(500).json({ error: '⚠️ Error al obtener lugares' });
   }
+});
+
+app.get('/camino-secreto', async (req, res) => {
+  const { latInicio, lonInicio, latDestino, lonDestino } = req.query;
+
+  if (!latInicio || !lonInicio || !latDestino || !lonDestino) {
+    return res.status(400).json({ error: '❌ Faltan coordenadas de origen y destino' });
+  }
+
+  const delta = 0.01;
+  const minLat = Math.min(latInicio, latDestino) - delta;
+  const maxLat = Math.max(latInicio, latDestino) + delta;
+  const minLon = Math.min(lonInicio, lonDestino) - delta;
+  const maxLon = Math.max(lonInicio, lonDestino) + delta;
+
+  const tagsInteresantes = [
+    'tourism=museum', 'tourism=artwork', 'historic=memorial',
+    'leisure=garden', 'tourism=viewpoint', 'tourism=attraction',
+    'artwork_type=mural', 'artwork_type=sculpture'
+  ];
+
+  const filtroTags = tagsInteresantes.map(t => {
+    const [clave, valor] = t.split('=');
+    return `
+      node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+    `;
+  }).join('\n');
+
+  const query = `
+    [out:json][timeout:25];
+    (
+      ${filtroTags}
+    );
+    out center tags;
+  `;
+
+  try {
+    const response = await axios.get('https://overpass-api.de/api/interpreter', {
+      params: { data: query }
+    });
+
+    const elementos = response.data.elements || [];
+
+    const lugares = elementos
+      .filter(el => el.tags && el.tags.name)
+      .slice(0, 2)
+      .map(el => ({
+        nombre: el.tags.name,
+        tipo: el.tags.tourism || el.tags.historic || el.tags.leisure || el.tags.artwork_type || 'interesante',
+        lat: el.lat ?? el.center?.lat,
+        lon: el.lon ?? el.center?.lon,
+        descripcion: el.tags.description || 'Sin descripción',
+        imagen: el.tags.image || el.tags.wikimedia_commons || null
+      }));
+
+    res.json({ secretos: lugares });
+  } catch (error) {
+    console.error('❌ Error camino-secreto:', error.message);
+    res.status(500).json({ error: '⚠️ Error al obtener lugares secretos.' });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Backend en puerto ${PORT}`);
 });
