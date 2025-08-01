@@ -1,26 +1,3 @@
-const express = require('express');
-const axios = require('axios');
-const cors = require('cors');
-const NodeCache = require('node-cache');
-const opening_hours = require('opening_hours'); // npm install opening_hours
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.use(cors());
-
-// Cache en memoria con TTL de 5 minutos
-const cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
-
-// Métricas simples en memoria
-const metrics = {
-  totalRequests: 0,
-  perCategory: {},
-};
-
-app.get('/', (req, res) => {
-  res.send('Servidor de intermediario activo');
-});
-
 app.get('/lugares', async (req, res) => {
   metrics.totalRequests++;
 
@@ -46,46 +23,71 @@ app.get('/lugares', async (req, res) => {
   const minLat = latNum - delta, maxLat = latNum + delta;
   const minLon = lonNum - delta, maxLon = lonNum + delta;
 
-  const cacheKey = `${categoria}_${latNum}_${lonNum}_${horario || ''}_${estadoAnimo || ''}_${gasto || ''}`;
-  if (cache.has(cacheKey)) {
-    console.log('💾 Sirviendo desde cache');
-    return res.json(cache.get(cacheKey));
+  // Cache key con filtro horario para resultados filtrados y sin filtrar
+  const cacheKeyHorario = `${categoria}_${latNum}_${lonNum}_${horario || ''}_filtered`;
+  const cacheKeyNoHorario = `${categoria}_${latNum}_${lonNum}_nohorario`;
+
+  // Función para filtrar por horario
+  function filtrarPorHorario(elementos) {
+    const ahora = new Date();
+    return elementos.filter(el => {
+      if (!el.tags || !el.tags.name) return false;
+      if (!horario) return true;
+      if (!el.tags.opening_hours) return true;
+      try {
+        const oh = new opening_hours(el.tags.opening_hours);
+        const hora = ahora.getHours();
+        const rango = (horario === 'mañana' && hora < 12)
+                   || (horario === 'tarde' && hora >= 12 && hora < 18)
+                   || (horario === 'noche' && hora >= 18);
+        return rango && oh.getState();
+      } catch {
+        return true;
+      }
+    });
   }
 
-  const query = `
-    [out:json][timeout:25];
-    (
-      node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-      way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-      relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-    );
-    out center tags;
-  `;
-
   try {
-    const response = await axios.get('https://overpass-api.de/api/interpreter', {
-      params: { data: query }
-    });
-    const elementos = response.data.elements || [];
+    let lugares = null;
+    let filtradoPorHorario = false;
 
-    const ahora = new Date();
-    const lugares = elementos
-      .filter(el => el.tags && el.tags.name)
-      .filter(el => {
-        if (!horario) return true;              // Si no hay filtro horario, deja pasar todo
-        if (!el.tags.opening_hours) return true; // Deja pasar si no tiene horario definido
-        try {
-          const oh = new opening_hours(el.tags.opening_hours);
-          const hora = ahora.getHours();
-          const rango = (horario === 'mañana' && hora < 12)
-                     || (horario === 'tarde' && hora >= 12 && hora < 18)
-                     || (horario === 'noche' && hora >= 18);
-          return rango && oh.getState();
-        } catch {
-          return true; // Si error leyendo horario, pasa el lugar
-        }
-      })
-      .map(el => {
+    // Intentar usar cache con filtro horario
+    if (cache.has(cacheKeyHorario)) {
+      console.log('💾 Sirviendo desde cache (filtrado horario)');
+      lugares = cache.get(cacheKeyHorario);
+      filtradoPorHorario = true;
+    } else if (cache.has(cacheKeyNoHorario)) {
+      console.log('💾 Sirviendo desde cache (sin filtro horario)');
+      lugares = cache.get(cacheKeyNoHorario);
+      filtradoPorHorario = false;
+    } else {
+      // No hay cache, hacemos consulta Overpass
+      const query = `
+        [out:json][timeout:25];
+        (
+          node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+          way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+          relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+        );
+        out center tags;
+      `;
+      const response = await axios.get('https://overpass-api.de/api/interpreter', {
+        params: { data: query }
+      });
+      const elementos = response.data.elements || [];
+
+      // Primer intento: filtrar por horario
+      let filtrados = filtrarPorHorario(elementos);
+
+      if (filtrados.length === 0 && horario) {
+        // No hay resultados filtrados, relajar filtro y usar todos
+        filtrados = elementos.filter(el => el.tags && el.tags.name);
+        filtradoPorHorario = false;
+      } else {
+        filtradoPorHorario = true;
+      }
+
+      lugares = filtrados.map(el => {
         const tourismScore = ['tourism', 'historic', 'leisure'].reduce((sum, k) =>
           sum + (el.tags[k] ? 1 : 0), 0
         );
@@ -104,30 +106,22 @@ app.get('/lugares', async (req, res) => {
           imagen,
           distancia: null,
         };
-      })
-      .sort((a, b) => b.puntuacion - a.puntuacion);
+      }).sort((a, b) => b.puntuacion - a.puntuacion);
 
-    const lugaresLimitados = lugares.slice(0, 4);
-    cache.set(cacheKey, lugaresLimitados);
+      // Guardar en cache el resultado apropiado
+      if (filtradoPorHorario) {
+        cache.set(cacheKeyHorario, lugares.slice(0, 4));
+      } else {
+        cache.set(cacheKeyNoHorario, lugares.slice(0, 4));
+      }
 
-    console.log('Lugares filtrados y ordenados:', lugaresLimitados.length);
-    res.json(lugaresLimitados);
+      lugares = lugares.slice(0, 4);
+    }
+
+    res.json({ lugares, filtradoPorHorario });
 
   } catch (error) {
     console.error('Error Overpass:', error.message);
     res.status(500).json({ error: '⚠️ Error al obtener datos de Overpass. Intenta más tarde.' });
   }
-});
-
-app.get('/metrics', (req, res) => {
-  res.json(metrics);
-});
-
-app.get('/limpiar-cache', (req, res) => {
-  cache.flushAll();
-  res.send('Cache limpiado');
-});
-
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
