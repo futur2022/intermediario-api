@@ -40,7 +40,7 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Latitud o longitud inválidas' });
   }
 
-  const delta = 0.1; // +/-10 km
+  const delta = 0.05; // +/- 5 km (término medio)
   const minLat = latNum - delta;
   const maxLat = latNum + delta;
   const minLon = lonNum - delta;
@@ -76,9 +76,11 @@ app.get('/lugares', async (req, res) => {
         horario: el.tags.opening_hours || 'No disponible',
         sitioWeb: el.tags.website || 'No disponible',
         descripcion: el.tags.description || 'Sin descripción',
-      }));
+        puntuacion: Object.keys(el.tags).length // cantidad de etiquetas como puntuación
+      }))
+      .sort((a, b) => b.puntuacion - a.puntuacion); // orden descendente por puntuación
 
-    console.log('Lugares filtrados:', lugares.length);
+    console.log('Lugares filtrados y ordenados:', lugares.length);
     res.json(lugares);
   } catch (error) {
     console.error('Error Overpass:', error.message);
