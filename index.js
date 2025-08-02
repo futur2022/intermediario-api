@@ -21,7 +21,12 @@ const categoriasTurismoLocal = {
   fast_food: [["amenity", "fast_food"]],
   library: [["amenity", "library"]],
   peak: [["natural", "peak"]],
-  jardin: [["leisure", "garden"]],
+  jardin: [
+    ["leisure", "garden"],
+    ["leisure", "park"],
+    ["leisure", "common"],
+    ["natural", "grassland"]
+  ],
   mirador: [
     ["tourism", "viewpoint"],
     ["leisure", "picnic_site"]
@@ -47,6 +52,68 @@ const categoriasTurismoLocal = {
   ]
 };
 
+// 🔁 Función para intentar con diferentes radios
+async function buscarLugares(categoria, latNum, lonNum, radiosKm) {
+  for (const delta of radiosKm) {
+    const minLat = latNum - delta;
+    const maxLat = latNum + delta;
+    const minLon = lonNum - delta;
+    const maxLon = lonNum + delta;
+
+    const filtros = categoriasTurismoLocal[categoria]
+      .map(([clave, valor]) => `
+        node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+        way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+        relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      `)
+      .join('\n');
+
+    const query = `
+      [out:json][timeout:25];
+      (
+        ${filtros}
+      );
+      out center tags;
+    `;
+
+    console.log(`📡 Buscando con delta = ${delta}...`);
+
+    try {
+      const response = await axios.get('https://overpass-api.de/api/interpreter', {
+        params: { data: query }
+      });
+
+      const elementos = response.data.elements || [];
+
+      const lugares = elementos
+        .filter(el => el.tags && el.tags.name)
+        .map(el => ({
+          nombre: el.tags.name,
+          categoria,
+          lat: el.lat ?? el.center?.lat,
+          lon: el.lon ?? el.center?.lon,
+          direccion: el.tags['addr:street'] || '📍 Dirección no disponible',
+          telefono: el.tags.phone || '📵 No disponible',
+          horario: el.tags.opening_hours || '⏰ No disponible',
+          sitioWeb: el.tags.website || '🌐 No disponible',
+          descripcion: el.tags.description || '📝 Sin descripción',
+        }));
+
+      if (lugares.length > 0) {
+        console.log(`✅ Lugares encontrados con delta ${delta}: ${lugares.length}`);
+        return lugares;
+      } else {
+        console.log(`⚠️ Sin resultados con delta ${delta}`);
+      }
+    } catch (error) {
+      console.error(`🔥 Error con delta ${delta}:`, error.message);
+      return null;
+    }
+  }
+
+  return []; // Si ninguno funcionó
+}
+
 app.get('/lugares', async (req, res) => {
   let { categoria, lat, lon } = req.query;
   console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon });
@@ -55,9 +122,8 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
-  // Validar que la categoría enviada sea una clave válida simple
   if (!categoriasTurismoLocal[categoria]) {
-    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida en turismo local.` });
+    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida.` });
   }
 
   const latNum = parseFloat(lat);
@@ -66,59 +132,15 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Latitud o longitud inválidas' });
   }
 
-  const delta = 0.1; // +/- 10 km
-  const minLat = latNum - delta;
-  const maxLat = latNum + delta;
-  const minLon = lonNum - delta;
-  const maxLon = lonNum + delta;
+  const radiosKm = [0.02, 0.05, 0.1]; // 🔁 Escala progresiva (2km → 5km → 10km)
+  const lugares = await buscarLugares(categoria, latNum, lonNum, radiosKm);
 
-  // Construir filtros Overpass para cada par [clave, valor] de la categoría
-  const filtros = categoriasTurismoLocal[categoria]
-    .map(([clave, valor]) => `
-      node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-      way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-      relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
-    `)
-    .join('\n');
-
-  const query = `
-    [out:json][timeout:25];
-    (
-      ${filtros}
-    );
-    out center tags;
-  `;
-
-  console.log("📜 Consulta Overpass:", query);
-
-  try {
-    const response = await axios.get('https://overpass-api.de/api/interpreter', {
-      params: { data: query }
-    });
-
-    const elementos = response.data.elements || [];
-    console.log('🎯 Elementos recibidos:', elementos.length);
-
-    const lugares = elementos
-      .filter(el => el.tags && el.tags.name)
-      .map(el => ({
-        nombre: el.tags.name,
-        categoria,
-        lat: el.lat ?? el.center?.lat,
-        lon: el.lon ?? el.center?.lon,
-        direccion: el.tags['addr:street'] || '📍 Dirección no disponible',
-        telefono: el.tags.phone || '📵 No disponible',
-        horario: el.tags.opening_hours || '⏰ No disponible',
-        sitioWeb: el.tags.website || '🌐 No disponible',
-        descripcion: el.tags.description || '📝 Sin descripción',
-      }));
-
-    console.log('✨ Lugares válidos enviados:', lugares.length);
-    res.json(lugares);
-  } catch (error) {
-    console.error('🔥 Error Overpass:', error.message);
-    res.status(500).json({ error: 'Error al obtener datos de Overpass' });
+  if (lugares === null) {
+    return res.status(500).json({ error: 'Error al consultar Overpass' });
   }
+
+  console.log('✨ Lugares enviados al frontend:', lugares.length);
+  res.json(lugares);
 });
 
 app.listen(PORT, () => {
