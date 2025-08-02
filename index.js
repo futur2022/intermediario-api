@@ -24,9 +24,9 @@ const categoriasTurismoLocal = {
   mural: [["artwork", "graffiti"]],
   jardin: [
     ["leisure", "garden"],
-    ["leisure", "park"],
-    ["leisure", "common"],
-    ["natural", "grassland"]
+    ["leisure", "park"],        // extensión
+    ["leisure", "common"],      // parque común
+    ["natural", "grassland"]    // área verde natural
   ],
   mirador: [
     ["tourism", "viewpoint"],
@@ -71,14 +71,14 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Latitud o longitud inválidas' });
   }
 
-  // 🔍 Radio reducido para turismo local (≈ 2 km)
-  const delta = 0.02;
+  // 🔍 Radio reducido para turismo local
+  const delta = 0.1;
   const minLat = latNum - delta;
   const maxLat = latNum + delta;
   const minLon = lonNum - delta;
   const maxLon = lonNum + delta;
 
-  // 🔧 Generar filtros Overpass para todas las etiquetas asociadas
+  // 🔧 Generar filtros Overpass para todas las etiquetas asociadas a la categoría
   const filtros = categoriasTurismoLocal[categoria]
     .map(([clave, valor]) => `
       node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
@@ -105,35 +105,22 @@ app.get('/lugares', async (req, res) => {
     const elementos = response.data.elements || [];
     console.log('🎯 Elementos recibidos:', elementos.length);
 
-    // ✅ Mapear + puntuar + ordenar por completitud
     const lugares = elementos
       .filter(el => el.tags && el.tags.name)
-      .map(el => {
-        const lugar = {
-          nombre: el.tags.name,
-          categoria,
-          lat: el.lat ?? el.center?.lat,
-          lon: el.lon ?? el.center?.lon,
-          direccion: el.tags['addr:street'] || '📍 Dirección no disponible',
-          telefono: el.tags.phone || '📵 No disponible',
-          horario: el.tags.opening_hours || '⏰ No disponible',
-          sitioWeb: el.tags.website || '🌐 No disponible',
-          descripcion: el.tags.description || '📝 Sin descripción'
-        };
-        // Calcular puntuación de completitud
-        let puntos = 0;
-        if (el.tags['addr:street']) puntos++;
-        if (el.tags.phone)          puntos++;
-        if (el.tags.opening_hours)  puntos++;
-        if (el.tags.website)        puntos++;
-        if (el.tags.description)    puntos++;
-        return { ...lugar, puntos };
-      })
-      .sort((a, b) => b.puntos - a.puntos);
+      .map(el => ({
+        nombre: el.tags.name,
+        categoria,
+        lat: el.lat ?? el.center?.lat,
+        lon: el.lon ?? el.center?.lon,
+        direccion: el.tags['addr:street'] || '📍 Dirección no disponible',
+        telefono: el.tags.phone || '📵 No disponible',
+        horario: el.tags.opening_hours || '⏰ No disponible',
+        sitioWeb: el.tags.website || '🌐 No disponible',
+        descripcion: el.tags.description || '📝 Sin descripción',
+      }));
 
-    console.log('✨ Lugares válidos enviados (ordenados):', lugares.length);
+    console.log('✨ Lugares válidos enviados:', lugares.length);
     res.json(lugares);
-
   } catch (error) {
     console.error('🔥 Error Overpass:', error.message);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
