@@ -106,18 +106,32 @@ app.get('/lugares', async (req, res) => {
     console.log('🎯 Elementos recibidos:', elementos.length);
 
     const lugares = elementos
-      .filter(el => el.tags && el.tags.name)
-      .map(el => ({
-        nombre: el.tags.name,
-        categoria,
-        lat: el.lat ?? el.center?.lat,
-        lon: el.lon ?? el.center?.lon,
-        direccion: el.tags['addr:street'] || '📍 Dirección no disponible',
-        telefono: el.tags.phone || '📵 No disponible',
-        horario: el.tags.opening_hours || '⏰ No disponible',
-        sitioWeb: el.tags.website || '🌐 No disponible',
-        descripcion: el.tags.description || '📝 Sin descripción',
-      }));
+  .filter(el => el.tags && el.tags.name)
+  .map(el => {
+    const lugar = {
+      nombre: el.tags.name,
+      categoria,
+      lat: el.lat ?? el.center?.lat,
+      lon: el.lon ?? el.center?.lon,
+      direccion: el.tags['addr:street'] || '📍 Dirección no disponible',
+      telefono: el.tags.phone || '📵 No disponible',
+      horario: el.tags.opening_hours || '⏰ No disponible',
+      sitioWeb: el.tags.website || '🌐 No disponible',
+      descripcion: el.tags.description || '📝 Sin descripción',
+    };
+
+    // 🔢 Puntuar por cantidad de datos útiles disponibles
+    let puntos = 0;
+    if (el.tags.phone) puntos++;
+    if (el.tags.opening_hours) puntos++;
+    if (el.tags.website) puntos++;
+    if (el.tags.description) puntos++;
+    if (el.tags['addr:street']) puntos++;
+
+    return { ...lugar, puntos };
+  })
+  .sort((a, b) => b.puntos - a.puntos); // 🔽 Ordenar de mayor a menor por completitud
+
 
     console.log('✨ Lugares válidos enviados:', lugares.length);
     res.json(lugares);
