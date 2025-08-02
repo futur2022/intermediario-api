@@ -11,294 +11,40 @@ app.get('/', (req, res) => {
   res.send('Servidor de intermediario turístico activo');
 });
 
-// 🧭 Diccionario ultra ampliado de categorías turísticas (clave simple: lista de [clave, valor])
+// 🧭 Diccionario avanzado de categorías turísticas (clave simple: lista de [clave, valor])
 const categoriasTurismoLocal = {
-  restaurant: [
-    ["amenity", "restaurant"],
-    ["amenity", "cafe"],
-    ["amenity", "food_court"],
-    ["amenity", "bar"],
-    ["amenity", "pub"],
-    ["amenity", "fast_food"],
-    ["cuisine", "mexican"],
-    ["cuisine", "italian"],
-    ["cuisine", "asian"],
-    ["cuisine", "vegetarian"],
-  ],
-
-  park: [
-    ["leisure", "park"],
-    ["leisure", "garden"],
-    ["leisure", "nature_reserve"],
-    ["leisure", "playground"],
-    ["leisure", "picnic_site"],
-    ["natural", "wood"],
-    ["natural", "scrub"],
-  ],
-
-  museum: [
-    ["tourism", "museum"],
-    ["historic", "museum"],
-    ["tourism", "artwork"],
-    ["tourism", "gallery"],
-  ],
-
-  attraction: [
-    ["tourism", "attraction"],
-    ["tourism", "theme_park"],
-    ["tourism", "zoo"],
-    ["tourism", "aquarium"],
-    ["historic", "castle"],
-    ["historic", "ruins"],
-    ["historic", "archaeological_site"],
-  ],
-
-  supermarket: [
-    ["shop", "supermarket"],
-    ["shop", "convenience"],
-    ["shop", "greengrocer"],
-    ["shop", "bakery"],
-    ["shop", "butcher"],
-  ],
-
-  fast_food: [
-    ["amenity", "fast_food"],
-    ["amenity", "food_court"],
-    ["amenity", "ice_cream"],
-    ["shop", "kiosk"],
-  ],
-
-  library: [
-    ["amenity", "library"],
-    ["amenity", "community_centre"],
-    ["amenity", "school"],
-  ],
-
-  peak: [
-    ["natural", "peak"],
-    ["natural", "mountain"],
-    ["natural", "volcano"],
-    ["natural", "ridge"],
-  ],
-
-  mural: [
-    ["artwork", "graffiti"],
-    ["artwork", "mural"],
-  ],
-
-  jardin: [
-    ["leisure", "garden"],
-    ["historic", "garden"],
-    ["leisure", "park"],
-  ],
-
+  restaurant: [["amenity", "restaurant"]],
+  park: [["leisure", "park"]],
+  museum: [["tourism", "museum"]],
+  attraction: [["tourism", "attraction"]],
+  supermarket: [["shop", "supermarket"]],
+  fast_food: [["amenity", "fast_food"]],
+  library: [["amenity", "library"]],
+  peak: [["natural", "peak"]],
+  jardin: [["leisure", "garden"]],
   mirador: [
     ["tourism", "viewpoint"],
-    ["leisure", "picnic_site"],
-    ["natural", "peak"],
+    ["leisure", "picnic_site"]
   ],
-
   monumento: [
     ["historic", "monument"],
-    ["historic", "memorial"],
-    ["historic", "statue"],
-    ["historic", "battlefield"],
-    ["historic", "wayside_shrine"],
+    ["historic", "memorial"]
   ],
-
-  iglesia: [
-    ["amenity", "place_of_worship"],
-    ["building", "church"],
-    ["building", "cathedral"],
-    ["building", "chapel"],
-    ["religion", "christian"],
-    ["religion", "catholic"],
-  ],
-
+  iglesia: [["amenity", "place_of_worship"]],
   centro_cultural: [
     ["amenity", "arts_centre"],
-    ["amenity", "theatre"],
-    ["amenity", "cinema"],
-    ["amenity", "community_centre"],
-    ["historic", "theatre"],
+    ["amenity", "theatre"]
   ],
-
   ruta_natural: [
     ["route", "hiking"],
     ["route", "foot"],
-    ["highway", "path"],
-    ["route", "cycle"],
-    ["route", "walking"],
+    ["highway", "path"]
   ],
-
   lugar_secreto: [
     ["place", "locality"],
     ["place", "isolated_dwelling"],
-    ["tourism", "attraction"],
-    ["historic", "ruins"],
-    ["natural", "cave_entrance"],
-    ["natural", "spring"],
-    ["leisure", "garden"],
-  ],
-
-  mercado: [
-    ["amenity", "marketplace"],
-    ["shop", "kiosk"],
-    ["shop", "mall"],
-    ["shop", "department_store"],
-  ],
-
-  evento: [
-    ["event", "festival"],
-    ["event", "fair"],
-    ["event", "concert"],
-  ],
-
-  transporte: [
-    ["amenity", "bus_station"],
-    ["amenity", "taxi"],
-    ["amenity", "bicycle_rental"],
-    ["public_transport", "station"],
-    ["railway", "station"],
-  ],
-
-  hotel: [
-    ["tourism", "hotel"],
-    ["tourism", "motel"],
-    ["tourism", "hostel"],
-    ["tourism", "guest_house"],
-    ["tourism", "apartment"],
-  ],
-
-  cafe: [
-    ["amenity", "cafe"],
-    ["amenity", "coffee_shop"],
-  ],
-
-  entretenimiento: [
-    ["amenity", "nightclub"],
-    ["amenity", "casino"],
-    ["amenity", "bowling_alley"],
-    ["amenity", "sports_centre"],
-  ],
-
-  naturaleza: [
-    ["natural", "water"],
-    ["natural", "lake"],
-    ["natural", "river"],
-    ["natural", "forest"],
-    ["natural", "wetland"],
-  ],
-
-  playa: [
-    ["natural", "beach"],
-    ["natural", "coastline"],
-    ["natural", "sand"],
-  ],
-
-  // Nuevas categorías más difíciles o raras para turismo local
-
-  ruinas_arqueologicas: [
-    ["historic", "archaeological_site"],
-    ["historic", "ruins"],
-    ["historic", "fort"],
-  ],
-
-  cavernas_y_cuevas: [
-    ["natural", "cave_entrance"],
-    ["natural", "cave"],
-  ],
-
-  arte_publico: [
-    ["artwork", "sculpture"],
-    ["artwork", "monument"],
-    ["artwork", "installation"],
-    ["artwork", "mural"],
-  ],
-
-  sitios_religiosos_especiales: [
-    ["historic", "wayside_shrine"],
-    ["amenity", "shrine"],
-    ["amenity", "chapel"],
-    ["place_of_worship", "mosque"],
-    ["place_of_worship", "temple"],
-    ["place_of_worship", "synagogue"],
-  ],
-
-  espacios_verdes_poco_comunes: [
-    ["leisure", "nature_reserve"],
-    ["leisure", "protected_area"],
-    ["natural", "grassland"],
-    ["natural", "heath"],
-    ["natural", "wetland"],
-  ],
-
-  centros_historicos: [
-    ["place", "historic_district"],
-    ["place", "village_green"],
-    ["historic", "town_gate"],
-  ],
-
-  rutas_especiales: [
-    ["route", "ski"],
-    ["route", "horse"],
-    ["route", "canoe"],
-    ["route", "trail"],
-  ],
-
-  puentes_y_estructuras: [
-    ["bridge", "yes"],
-    ["man_made", "tower"],
-    ["man_made", "lighthouse"],
-    ["man_made", "bridge"],
-  ],
-
-  patrimonio_indigena: [
-    ["heritage", "indigenous_cultural_site"],
-    ["historic", "aboriginal_site"],
-  ],
-
-  deportes_al_aire_libre: [
-    ["leisure", "sports_centre"],
-    ["leisure", "stadium"],
-    ["leisure", "golf_course"],
-    ["leisure", "pitch"],
-  ],
-
-  sitios_arqueologicos_subacuaticos: [
-    ["natural", "wreck"],
-    ["tourism", "underwater_site"],
-  ],
-
-  observatorios_y_ciencia: [
-    ["man_made", "observatory"],
-    ["tourism", "science_centre"],
-    ["amenity", "planetarium"],
-  ],
-
-  lugares_de_interes_tecnologico: [
-    ["man_made", "power_station"],
-    ["man_made", "water_tower"],
-    ["man_made", "factory"],
-    ["man_made", "windmill"],
-  ],
-
-  spas_y_balnearios: [
-    ["amenity", "spa"],
-    ["natural", "spring"],
-  ],
-
-  miradores_menos_comunes: [
-    ["tourism", "viewpoint"],
-    ["natural", "peak"],
-    ["natural", "cliff"],
-  ],
-
-  sitios_de_pesca: [
-    ["leisure", "fishing_area"],
-    ["natural", "water"],
-    ["waterway", "river"],
-  ],
+    ["tourism", "attraction"]
+  ]
 };
 
 app.get('/lugares', async (req, res) => {
@@ -320,7 +66,7 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Latitud o longitud inválidas' });
   }
 
-  const delta = 0.1; // +/- 10 km aprox.
+  const delta = 0.1; // +/- 10 km
   const minLat = latNum - delta;
   const maxLat = latNum + delta;
   const minLon = lonNum - delta;
