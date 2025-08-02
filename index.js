@@ -11,7 +11,7 @@ app.get('/', (req, res) => {
   res.send('Servidor de intermediario turístico activo');
 });
 
-// 🧭 Diccionario avanzado de categorías turísticas
+// 🧭 Diccionario avanzado de categorías turísticas (clave simple: lista de [clave, valor])
 const categoriasTurismoLocal = {
   restaurant: [["amenity", "restaurant"]],
   park: [["leisure", "park"]],
@@ -55,6 +55,7 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
+  // Validar que la categoría enviada sea una clave válida simple
   if (!categoriasTurismoLocal[categoria]) {
     return res.status(400).json({ error: `Categoría '${categoria}' no reconocida en turismo local.` });
   }
@@ -71,11 +72,12 @@ app.get('/lugares', async (req, res) => {
   const minLon = lonNum - delta;
   const maxLon = lonNum + delta;
 
+  // Construir filtros Overpass para cada par [clave, valor] de la categoría
   const filtros = categoriasTurismoLocal[categoria]
-    .map(([k, v]) => `
-      node[${k}=${v}](${minLat},${minLon},${maxLat},${maxLon});
-      way[${k}=${v}](${minLat},${minLon},${maxLat},${maxLon});
-      relation[${k}=${v}](${minLat},${minLon},${maxLat},${maxLon});
+    .map(([clave, valor]) => `
+      node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
+      relation[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
     `)
     .join('\n');
 
