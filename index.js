@@ -11,7 +11,6 @@ app.get('/', (req, res) => {
   res.send('Servidor de intermediario turístico activo');
 });
 
-// 🧭 Diccionario avanzado de categorías turísticas
 const categoriasTurismoLocal = {
   restaurant: [["amenity", "restaurant"]],
   park: [["leisure", "park"]],
@@ -82,29 +81,50 @@ app.get('/lugares', async (req, res) => {
 
     let lugares = elementos
       .filter(el => el.tags && el.tags.name)
-      .map(el => ({
-        nombre: el.tags.name,
-        categoria,
-        lat: el.lat ?? el.center?.lat,
-        lon: el.lon ?? el.center?.lon,
-        direccion: el.tags['addr:street'] || '📍 Dirección no disponible',
-        telefono: el.tags.phone || '📵 No disponible',
-        horario: el.tags.opening_hours || '⏰ No disponible',
-        sitioWeb: el.tags.website || '🌐 No disponible',
-        descripcion: el.tags.description || '📝 Sin descripción',
-      }));
+      .map(el => {
+        const lugar = {
+          nombre: el.tags.name,
+          categoria,
+          lat: el.lat ?? el.center?.lat,
+          lon: el.lon ?? el.center?.lon,
+          direccion: el.tags['addr:street'] || null,
+          telefono: el.tags.phone || null,
+          horario: el.tags.opening_hours || null,
+          sitioWeb: el.tags.website || null,
+          descripcion: el.tags.description || null,
+        };
 
-    // 🧠 Ordenar los lugares según si coinciden con el horario enviado por el usuario
-    if (horario) {
-      lugares.sort((a, b) => {
-        const aMatch = a.horario.includes(horario);
-        const bMatch = b.horario.includes(horario);
-        return bMatch - aMatch; // Primero los que coinciden
+        // 🧮 Calcular puntaje
+        let puntaje = 0;
+        if (lugar.nombre) puntaje += 2;
+        if (lugar.telefono) puntaje += 1;
+        if (lugar.direccion) puntaje += 1;
+        if (lugar.horario) puntaje += 1;
+        if (lugar.sitioWeb) puntaje += 1;
+        if (lugar.descripcion) puntaje += 1;
+
+        if (horario && lugar.horario && lugar.horario.toLowerCase().includes(horario.toLowerCase())) {
+          puntaje += 3;
+        }
+
+        return { ...lugar, puntaje };
       });
-    }
 
-    console.log('✨ Lugares válidos enviados:', lugares.length);
-    res.json(lugares);
+    // 🧠 Ordenar lugares por puntaje
+    lugares.sort((a, b) => b.puntaje - a.puntaje);
+
+    // 🎯 Formatear la salida para el cliente
+    const resultado = lugares.map(lugar => ({
+      ...lugar,
+      direccion: lugar.direccion || '📍 Dirección no disponible',
+      telefono: lugar.telefono || '📵 No disponible',
+      horario: lugar.horario || '⏰ No disponible',
+      sitioWeb: lugar.sitioWeb || '🌐 No disponible',
+      descripcion: lugar.descripcion || '📝 Sin descripción',
+    }));
+
+    console.log('✨ Lugares válidos enviados:', resultado.length);
+    res.json(resultado);
   } catch (error) {
     console.error('🔥 Error Overpass:', error.message);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
