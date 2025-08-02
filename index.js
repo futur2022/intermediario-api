@@ -11,7 +11,7 @@ app.get('/', (req, res) => {
   res.send('Servidor de intermediario turístico activo');
 });
 
-// 🧭 Diccionario avanzado de categorías turísticas (clave simple: lista de [clave, valor])
+// 🧭 Diccionario avanzado de categorías turísticas
 const categoriasTurismoLocal = {
   restaurant: [["amenity", "restaurant"]],
   park: [["leisure", "park"]],
@@ -22,40 +22,22 @@ const categoriasTurismoLocal = {
   library: [["amenity", "library"]],
   peak: [["natural", "peak"]],
   jardin: [["leisure", "garden"]],
-  mirador: [
-    ["tourism", "viewpoint"],
-    ["leisure", "picnic_site"]
-  ],
-  monumento: [
-    ["historic", "monument"],
-    ["historic", "memorial"]
-  ],
+  mirador: [["tourism", "viewpoint"], ["leisure", "picnic_site"]],
+  monumento: [["historic", "monument"], ["historic", "memorial"]],
   iglesia: [["amenity", "place_of_worship"]],
-  centro_cultural: [
-    ["amenity", "arts_centre"],
-    ["amenity", "theatre"]
-  ],
-  ruta_natural: [
-    ["route", "hiking"],
-    ["route", "foot"],
-    ["highway", "path"]
-  ],
-  lugar_secreto: [
-    ["place", "locality"],
-    ["place", "isolated_dwelling"],
-    ["tourism", "attraction"]
-  ]
+  centro_cultural: [["amenity", "arts_centre"], ["amenity", "theatre"]],
+  ruta_natural: [["route", "hiking"], ["route", "foot"], ["highway", "path"]],
+  lugar_secreto: [["place", "locality"], ["place", "isolated_dwelling"], ["tourism", "attraction"]]
 };
 
 app.get('/lugares', async (req, res) => {
-  let { categoria, lat, lon } = req.query;
-  console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon });
+  let { categoria, lat, lon, horario } = req.query;
+  console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon, horario });
 
   if (!categoria || !lat || !lon) {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
-  // Validar que la categoría enviada sea una clave válida simple
   if (!categoriasTurismoLocal[categoria]) {
     return res.status(400).json({ error: `Categoría '${categoria}' no reconocida en turismo local.` });
   }
@@ -66,13 +48,12 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Latitud o longitud inválidas' });
   }
 
-  const delta = 0.1; // +/- 10 km
+  const delta = 0.1;
   const minLat = latNum - delta;
   const maxLat = latNum + delta;
   const minLon = lonNum - delta;
   const maxLon = lonNum + delta;
 
-  // Construir filtros Overpass para cada par [clave, valor] de la categoría
   const filtros = categoriasTurismoLocal[categoria]
     .map(([clave, valor]) => `
       node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
@@ -99,7 +80,7 @@ app.get('/lugares', async (req, res) => {
     const elementos = response.data.elements || [];
     console.log('🎯 Elementos recibidos:', elementos.length);
 
-    const lugares = elementos
+    let lugares = elementos
       .filter(el => el.tags && el.tags.name)
       .map(el => ({
         nombre: el.tags.name,
@@ -112,6 +93,15 @@ app.get('/lugares', async (req, res) => {
         sitioWeb: el.tags.website || '🌐 No disponible',
         descripcion: el.tags.description || '📝 Sin descripción',
       }));
+
+    // 🧠 Ordenar los lugares según si coinciden con el horario enviado por el usuario
+    if (horario) {
+      lugares.sort((a, b) => {
+        const aMatch = a.horario.includes(horario);
+        const bMatch = b.horario.includes(horario);
+        return bMatch - aMatch; // Primero los que coinciden
+      });
+    }
 
     console.log('✨ Lugares válidos enviados:', lugares.length);
     res.json(lugares);
