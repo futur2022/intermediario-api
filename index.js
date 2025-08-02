@@ -11,7 +11,7 @@ app.get('/', (req, res) => {
   res.send('Servidor de intermediario turístico activo');
 });
 
-// 🧭 Diccionario avanzado con sinónimos y etiquetas extendidas
+// 🧭 Diccionario avanzado de categorías turísticas (clave simple: lista de [clave, valor])
 const categoriasTurismoLocal = {
   restaurant: [["amenity", "restaurant"]],
   park: [["leisure", "park"]],
@@ -21,13 +21,7 @@ const categoriasTurismoLocal = {
   fast_food: [["amenity", "fast_food"]],
   library: [["amenity", "library"]],
   peak: [["natural", "peak"]],
-  mural: [["artwork", "graffiti"]],
-  jardin: [
-    ["leisure", "garden"],
-    ["leisure", "park"],        // extensión
-    ["leisure", "common"],      // parque común
-    ["natural", "grassland"]    // área verde natural
-  ],
+  jardin: [["leisure", "garden"]],
   mirador: [
     ["tourism", "viewpoint"],
     ["leisure", "picnic_site"]
@@ -61,8 +55,9 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
+  // Validar que la categoría enviada sea una clave válida simple
   if (!categoriasTurismoLocal[categoria]) {
-    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida.` });
+    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida en turismo local.` });
   }
 
   const latNum = parseFloat(lat);
@@ -71,14 +66,13 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Latitud o longitud inválidas' });
   }
 
-  // 🔍 Radio reducido para turismo local
-  const delta = 0.02;
+  const delta = 0.1; // +/- 10 km
   const minLat = latNum - delta;
   const maxLat = latNum + delta;
   const minLon = lonNum - delta;
   const maxLon = lonNum + delta;
 
-  // 🔧 Generar filtros Overpass para todas las etiquetas asociadas a la categoría
+  // Construir filtros Overpass para cada par [clave, valor] de la categoría
   const filtros = categoriasTurismoLocal[categoria]
     .map(([clave, valor]) => `
       node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
