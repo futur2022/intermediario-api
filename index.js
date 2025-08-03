@@ -1,56 +1,33 @@
-app.get('/lugares', async (req, res) => {
-  let { categoria, lat, lon, horario } = req.query;
+const URL_INTERMEDIARIO = 'https://intermediario-api-zmpt.onrender.com';
 
-  const radio = 0.01; // Aprox ~1 km
-  const minLat = parseFloat(lat) - radio;
-  const maxLat = parseFloat(lat) + radio;
-  const minLon = parseFloat(lon) - radio;
-  const maxLon = parseFloat(lon) + radio;
+export default async function recomendarLugares(usuario, categoriaSimple, lat, lon) {
+  if (!categoriaSimple || !lat || !lon) {
+    throw new Error('Faltan o son inválidos los parámetros para la recomendación');
+  }
 
-  const categoriasTurismoLocal = {
-    restaurant: [
-      ["amenity", "restaurant"],
-      ["amenity", "cafe"],
-      ["amenity", "food_court"],
-    ],
-    park: [["leisure", "park"]],
-    // agrega más categorías según necesites
-  };
-
-  const filtrosCategorias = categoriasTurismoLocal[categoria];
-
-  let filtros = "";
-  filtrosCategorias.forEach(([clave, valor]) => {
-    filtros += `
-      node["${clave}"="${valor}"](${minLat},${minLon},${maxLat},${maxLon});
-      way["${clave}"="${valor}"](${minLat},${minLon},${maxLat},${maxLon});
-      relation["${clave}"="${valor}"](${minLat},${minLon},${maxLat},${maxLon});
-    `;
+  const params = new URLSearchParams({
+    categoria: categoriaSimple,
+    lat,
+    lon,
+    horario: usuario.horario || '',
+    estadoAnimo: usuario.estadoAnimo || '',
+    gasto: usuario.gasto || '',
   });
 
-  const query = `
-    [out:json][timeout:25];
-    (
-      ${filtros}
-    );
-    out center 30;
-  `;
+  const url = `${URL_INTERMEDIARIO}/lugares?${params.toString()}`;
+  console.log("URL de consulta al intermediario:", url);
 
   try {
-    const response = await axios.post(
-      'https://overpass-api.de/api/interpreter',
-      query,
-      { headers: { 'Content-Type': 'text/plain' } }
-    );
-
-    const lugares = response.data.elements.map(lugar => ({
-      ...lugar,
-      accesible: lugar.tags?.wheelchair === 'yes'
-    }));
-
-    res.json(lugares);
+    const response = await fetch(url);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Error del intermediario: ${text}`);
+    }
+    const data = await response.json();
+    console.log("Datos recibidos del intermediario:", data);
+    return data;
   } catch (error) {
-    console.error('Error consultando Overpass:', error.message);
-    res.status(500).json({ error: 'Error al consultar lugares turísticos' });
+    console.error('Error al consultar el intermediario:', error.message);
+    return [];
   }
-});
+}
