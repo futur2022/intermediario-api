@@ -39,7 +39,14 @@ function interpretarPrecio(tags) {
   if (tags['price:range'] || tags.price) {
     return '💵 Costo aproximado';
   }
-  return null;
+  return 'Información no disponible';
+}
+
+function valorOInfo(valor) {
+  if (valor === null || valor === undefined || valor === '') {
+    return 'Información no disponible';
+  }
+  return valor;
 }
 
 app.get('/lugares', async (req, res) => {
@@ -105,19 +112,19 @@ app.get('/lugares', async (req, res) => {
         }
 
         const lugar = {
-          nombre: tags.name,
+          nombre: valorOInfo(tags.name),
           categoria,
           lat: el.lat ?? el.center?.lat,
           lon: el.lon ?? el.center?.lon,
-          direccion: tags['addr:street'] || null,
-          telefono: tags.phone || null,
-          horario: tags.opening_hours || null,
-          sitioWeb: tags.website || null,
-          descripcion: tags.description || null,
+          direccion: valorOInfo(tags['addr:street']),
+          telefono: valorOInfo(tags.phone),
+          horario: valorOInfo(tags.opening_hours),
+          sitioWeb: valorOInfo(tags.website),
+          descripcion: valorOInfo(tags.description),
           accesible: tags.wheelchair === 'yes',
-          rangoPrecio: tags.price || tags['price:range'] || tags.fee || null,
+          rangoPrecio: valorOInfo(tags.price || tags['price:range'] || tags.fee),
           precioAmigable: precioInterpretado,
-          tipoCocina: tags.cuisine || null,
+          tipoCocina: valorOInfo(tags.cuisine),
           estacionamiento: tags.parking === 'yes' || tags['parking:lane'] !== undefined,
           wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
           banos: tags.toilets === 'yes',
@@ -143,16 +150,16 @@ app.get('/lugares', async (req, res) => {
 
         // 🧮 Calcular puntaje
         let puntaje = 0;
-        if (lugar.nombre) puntaje += 2;
-        if (lugar.telefono) puntaje += 1;
-        if (lugar.direccion) puntaje += 1;
-        if (lugar.horario) puntaje += 1;
-        if (lugar.sitioWeb) puntaje += 1;
-        if (lugar.descripcion) puntaje += 1;
+        if (lugar.nombre !== 'Información no disponible') puntaje += 2;
+        if (lugar.telefono !== 'Información no disponible') puntaje += 1;
+        if (lugar.direccion !== 'Información no disponible') puntaje += 1;
+        if (lugar.horario !== 'Información no disponible') puntaje += 1;
+        if (lugar.sitioWeb !== 'Información no disponible') puntaje += 1;
+        if (lugar.descripcion !== 'Información no disponible') puntaje += 1;
         if (lugar.accesible) puntaje += 1;
-        if (lugar.tipoCocina) puntaje += 1;
-        if (lugar.rangoPrecio) puntaje += 1;
-        if (horario && lugar.horario?.toLowerCase().includes(horario.toLowerCase())) puntaje += 3;
+        if (lugar.tipoCocina !== 'Información no disponible') puntaje += 1;
+        if (lugar.rangoPrecio !== 'Información no disponible') puntaje += 1;
+        if (horario && lugar.horario.toLowerCase().includes(horario.toLowerCase())) puntaje += 3;
 
         lugar.puntaje = puntaje;
 
@@ -164,9 +171,9 @@ app.get('/lugares', async (req, res) => {
         if (lugar.banosAccesibles) lugar.tagsExtras.push("♿ Baños accesibles");
         if (lugar.terraza) lugar.tagsExtras.push("🌤️ Terraza");
         if (lugar.accesible) lugar.tagsExtras.push("♿ Accesible");
-        if (lugar.tipoCocina) lugar.tagsExtras.push(`🍽️ ${lugar.tipoCocina}`);
-        if (lugar.rangoPrecio) lugar.tagsExtras.push(`💲 ${lugar.rangoPrecio}`);
-        if (lugar.precioAmigable) lugar.tagsExtras.push(lugar.precioAmigable);
+        if (lugar.tipoCocina !== 'Información no disponible') lugar.tagsExtras.push(`🍽️ ${lugar.tipoCocina}`);
+        if (lugar.rangoPrecio !== 'Información no disponible') lugar.tagsExtras.push(`💲 ${lugar.rangoPrecio}`);
+        if (lugar.precioAmigable && lugar.precioAmigable !== 'Información no disponible') lugar.tagsExtras.push(lugar.precioAmigable);
         if (lugar.mascotasPermitidas) lugar.tagsExtras.push("🐶 Pet Friendly");
         if (lugar.romantico) lugar.tagsExtras.push("❤️ Romántico");
         if (lugar.smokingPermitido) lugar.tagsExtras.push("🚬 Permite fumar");
@@ -179,18 +186,7 @@ app.get('/lugares', async (req, res) => {
     // Ordenar por puntaje
     lugares.sort((a, b) => b.puntaje - a.puntaje);
 
-    // Resultado final para el frontend
-    const resultado = lugares.map(lugar => ({
-      ...lugar,
-      direccion: lugar.direccion || '📍 Dirección no disponible',
-      telefono: lugar.telefono || '📵 No disponible',
-      horario: lugar.horario || '⏰ No disponible',
-      sitioWeb: lugar.sitioWeb || '🌐 No disponible',
-      descripcion: lugar.descripcion || '📝 Sin descripción'
-    }));
-
-    console.log('✨ Lugares válidos enviados:', resultado.length);
-    res.json(resultado);
+    res.json(lugares);
   } catch (error) {
     console.error('🔥 Error Overpass:', error.message);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
