@@ -61,6 +61,18 @@ function valorOInfo(valor) {
   return valor;
 }
 
+// Nueva función para construir dirección completa
+function construirDireccion(tags) {
+  const partes = [
+    tags['addr:housenumber'],
+    tags['addr:street'],
+    tags['addr:city'],
+    tags['addr:postcode']
+  ].filter(Boolean);
+  if (partes.length === 0) return 'Información no disponible';
+  return partes.join(', ');
+}
+
 app.get('/lugares', async (req, res) => {
   const { categoria, lat, lon, horario } = req.query;
   console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon, horario });
@@ -118,18 +130,28 @@ app.get('/lugares', async (req, res) => {
 
         const nivelComodidad = (tags.indoor === 'yes' || tags.building) ? 'Interior' : 'Exterior';
 
+        // Construir dirección completa
+        const direccionCompleta = construirDireccion(tags);
+
+        // Mejorar rangoPrecio para evitar valores ambiguos (solo devolver si es texto legible)
+        let rangoPrecio = valorOInfo(tags.price || tags['price:range'] || tags.fee);
+        const valoresNoInformativos = ['yes', 'no', '0', 'free', ''];
+        if (valoresNoInformativos.includes(rangoPrecio.toString().toLowerCase())) {
+          rangoPrecio = 'Información no disponible';
+        }
+
         const lugar = {
           nombre: valorOInfo(tags.name),
           categoria,
           lat: el.lat ?? el.center?.lat,
           lon: el.lon ?? el.center?.lon,
-          direccion: valorOInfo(tags['addr:street']),
+          direccion: direccionCompleta,
           telefono: valorOInfo(tags.phone),
           horario: valorOInfo(tags.opening_hours),
           sitioWeb: valorOInfo(tags.website),
           descripcion: valorOInfo(tags.description),
           accesible: tagTieneValor(tags, 'wheelchair', ['yes', 'true', '1']),
-          rangoPrecio: valorOInfo(tags.price || tags['price:range'] || tags.fee),
+          rangoPrecio,
           precioAmigable: precioInterpretado,
           tipoCocina: valorOInfo(tags.cuisine),
           estacionamiento: tagTieneValor(tags, 'parking', ['yes', 'true', '1']),
@@ -166,7 +188,11 @@ app.get('/lugares', async (req, res) => {
         if (lugar.accesible) puntaje += 1;
         if (lugar.tipoCocina !== 'Información no disponible') puntaje += 1;
         if (lugar.rangoPrecio !== 'Información no disponible') puntaje += 1;
-        if (horario && lugar.horario.toLowerCase().includes(horario.toLowerCase())) puntaje += 3;
+        if (
+          horario && 
+          lugar.horario !== 'Información no disponible' &&
+          lugar.horario.toLowerCase().includes(horario.toLowerCase())
+        ) puntaje += 3;
 
         lugar.puntaje = puntaje;
 
