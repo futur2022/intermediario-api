@@ -69,8 +69,6 @@ app.get('/lugares', async (req, res) => {
     out center tags;
   `;
 
-  console.log("📜 Consulta Overpass:", query);
-
   try {
     const response = await axios.get('https://overpass-api.de/api/interpreter', {
       params: { data: query }
@@ -95,24 +93,25 @@ app.get('/lugares', async (req, res) => {
           sitioWeb: tags.website || null,
           descripcion: tags.description || null,
           accesible: tags.wheelchair === 'yes',
-          rangoPrecio: tags.fee || tags.charge || tags.price || null,
+          rangoPrecio: tags.price || tags.fee || tags.payment || null,
           tipoCocina: tags.cuisine || null,
           estacionamiento: tags.parking === 'yes',
           wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
           banos: tags.toilets === 'yes',
-          terraza: tags.outdoor_seating === 'yes',
-          ambienteFamiliar: tags.kids === 'yes',
+          terraza: tags.outdoor_seating === 'yes'
         };
 
-        // 🎖️ Etiquetas extra como badges
-        lugar.tagsExtras = [
-          lugar.wifi ? "📶 Wi-Fi" : null,
-          lugar.estacionamiento ? "🚗 Estacionamiento" : null,
-          lugar.banos ? "🚻 Baños" : null,
-          lugar.terraza ? "🌤️ Terraza" : null,
-          lugar.accesible ? "♿ Accesible" : null,
-          lugar.tipoCocina ? `🍽️ ${lugar.tipoCocina}` : null
-        ].filter(Boolean);
+        // Generar tagsExtras dinámicos
+        const tagsExtras = [];
+        if (lugar.wifi) tagsExtras.push("📶 Wi-Fi");
+        if (lugar.estacionamiento) tagsExtras.push("🚗 Estacionamiento");
+        if (lugar.banos) tagsExtras.push("🚻 Baños");
+        if (lugar.terraza) tagsExtras.push("🌤️ Terraza");
+        if (lugar.accesible) tagsExtras.push("♿ Accesible");
+        if (lugar.tipoCocina) tagsExtras.push(`🍽️ ${lugar.tipoCocina}`);
+        if (lugar.rangoPrecio) tagsExtras.push(`💲 ${lugar.rangoPrecio}`);
+
+        lugar.tagsExtras = tagsExtras;
 
         // 🧮 Calcular puntaje
         let puntaje = 0;
@@ -123,9 +122,6 @@ app.get('/lugares', async (req, res) => {
         if (lugar.sitioWeb) puntaje += 1;
         if (lugar.descripcion) puntaje += 1;
         if (lugar.accesible) puntaje += 1;
-        if (lugar.wifi) puntaje += 1;
-        if (lugar.estacionamiento) puntaje += 1;
-        if (lugar.banos) puntaje += 1;
 
         if (horario && lugar.horario && lugar.horario.toLowerCase().includes(horario.toLowerCase())) {
           puntaje += 3;
@@ -134,16 +130,17 @@ app.get('/lugares', async (req, res) => {
         return { ...lugar, puntaje };
       });
 
+    // 🧠 Ordenar lugares por puntaje
     lugares.sort((a, b) => b.puntaje - a.puntaje);
 
+    // 🎯 Formatear la salida para el cliente
     const resultado = lugares.map(lugar => ({
       ...lugar,
       direccion: lugar.direccion || '📍 Dirección no disponible',
       telefono: lugar.telefono || '📵 No disponible',
       horario: lugar.horario || '⏰ No disponible',
       sitioWeb: lugar.sitioWeb || '🌐 No disponible',
-      descripcion: lugar.descripcion || '📝 Sin descripción',
-      accesible: lugar.accesible
+      descripcion: lugar.descripcion || '📝 Sin descripción'
     }));
 
     console.log('✨ Lugares válidos enviados:', resultado.length);
