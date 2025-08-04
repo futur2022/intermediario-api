@@ -82,18 +82,37 @@ app.get('/lugares', async (req, res) => {
     let lugares = elementos
       .filter(el => el.tags && el.tags.name)
       .map(el => {
+        const tags = el.tags;
+
         const lugar = {
-          nombre: el.tags.name,
+          nombre: tags.name,
           categoria,
           lat: el.lat ?? el.center?.lat,
           lon: el.lon ?? el.center?.lon,
-          direccion: el.tags['addr:street'] || null,
-          telefono: el.tags.phone || null,
-          horario: el.tags.opening_hours || null,
-          sitioWeb: el.tags.website || null,
-          descripcion: el.tags.description || null,
-          accesible: el.tags.wheelchair === 'yes' ? true : false
+          direccion: tags['addr:street'] || null,
+          telefono: tags.phone || null,
+          horario: tags.opening_hours || null,
+          sitioWeb: tags.website || null,
+          descripcion: tags.description || null,
+          accesible: tags.wheelchair === 'yes',
+          rangoPrecio: tags.fee || tags.charge || tags.price || null,
+          tipoCocina: tags.cuisine || null,
+          estacionamiento: tags.parking === 'yes',
+          wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
+          banos: tags.toilets === 'yes',
+          terraza: tags.outdoor_seating === 'yes',
+          ambienteFamiliar: tags.kids === 'yes',
         };
+
+        // 🎖️ Etiquetas extra como badges
+        lugar.tagsExtras = [
+          lugar.wifi ? "📶 Wi-Fi" : null,
+          lugar.estacionamiento ? "🚗 Estacionamiento" : null,
+          lugar.banos ? "🚻 Baños" : null,
+          lugar.terraza ? "🌤️ Terraza" : null,
+          lugar.accesible ? "♿ Accesible" : null,
+          lugar.tipoCocina ? `🍽️ ${lugar.tipoCocina}` : null
+        ].filter(Boolean);
 
         // 🧮 Calcular puntaje
         let puntaje = 0;
@@ -103,7 +122,10 @@ app.get('/lugares', async (req, res) => {
         if (lugar.horario) puntaje += 1;
         if (lugar.sitioWeb) puntaje += 1;
         if (lugar.descripcion) puntaje += 1;
-        if (lugar.accesible) puntaje += 1; // Opcional: dar 1 punto si es accesible
+        if (lugar.accesible) puntaje += 1;
+        if (lugar.wifi) puntaje += 1;
+        if (lugar.estacionamiento) puntaje += 1;
+        if (lugar.banos) puntaje += 1;
 
         if (horario && lugar.horario && lugar.horario.toLowerCase().includes(horario.toLowerCase())) {
           puntaje += 3;
@@ -112,10 +134,8 @@ app.get('/lugares', async (req, res) => {
         return { ...lugar, puntaje };
       });
 
-    // 🧠 Ordenar lugares por puntaje
     lugares.sort((a, b) => b.puntaje - a.puntaje);
 
-    // 🎯 Formatear la salida para el cliente
     const resultado = lugares.map(lugar => ({
       ...lugar,
       direccion: lugar.direccion || '📍 Dirección no disponible',
@@ -123,7 +143,7 @@ app.get('/lugares', async (req, res) => {
       horario: lugar.horario || '⏰ No disponible',
       sitioWeb: lugar.sitioWeb || '🌐 No disponible',
       descripcion: lugar.descripcion || '📝 Sin descripción',
-      accesible: lugar.accesible // ♿ Se incluye directamente en el JSON
+      accesible: lugar.accesible
     }));
 
     console.log('✨ Lugares válidos enviados:', resultado.length);
