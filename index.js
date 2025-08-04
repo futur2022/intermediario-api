@@ -29,11 +29,23 @@ const categoriasTurismoLocal = {
   lugar_secreto: [["place", "locality"], ["place", "isolated_dwelling"], ["tourism", "attraction"]]
 };
 
+// Función genérica para validar tags con variantes (ignora mayúsculas, espacios, guiones, subrayados)
+function tagTieneValor(tags, clave, valoresValidos) {
+  if (!tags || !clave || !valoresValidos) return false;
+  const valor = tags[clave];
+  if (!valor) return false;
+  const valorNormalizado = valor.toString().toLowerCase().replace(/[\s-_]/g, '');
+  return valoresValidos.some(v =>
+    v.toString().toLowerCase().replace(/[\s-_]/g, '') === valorNormalizado
+  );
+}
+
 function interpretarPrecio(tags) {
-  if (tags.fee === 'no' || tags.price === '0' || tags.price === 'free') {
+  if (tagTieneValor(tags, 'fee', ['no']) || tagTieneValor(tags, 'price', ['0', 'free'])) {
     return '💸 Entrada gratuita';
   }
-  if (tags.fee === 'yes' || (tags.price && tags.price !== '0' && tags.price.toLowerCase() !== 'free')) {
+  if (tagTieneValor(tags, 'fee', ['yes']) || 
+      (tags.price && !['0','free'].includes(tags.price.toLowerCase()))) {
     return '💰 Entrada de pago';
   }
   if (tags['price:range'] || tags.price) {
@@ -102,14 +114,9 @@ app.get('/lugares', async (req, res) => {
       .map(el => {
         const tags = el.tags;
 
-        // Interpretar precio en texto amigable
         const precioInterpretado = interpretarPrecio(tags);
 
-        // Nivel de comodidad/clima (inferido)
-        let nivelComodidad = 'Exterior';
-        if (tags.indoor === 'yes' || tags.building) {
-          nivelComodidad = 'Interior';
-        }
+        const nivelComodidad = (tags.indoor === 'yes' || tags.building) ? 'Interior' : 'Exterior';
 
         const lugar = {
           nombre: valorOInfo(tags.name),
@@ -121,34 +128,34 @@ app.get('/lugares', async (req, res) => {
           horario: valorOInfo(tags.opening_hours),
           sitioWeb: valorOInfo(tags.website),
           descripcion: valorOInfo(tags.description),
-          accesible: tags.wheelchair === 'yes',
+          accesible: tagTieneValor(tags, 'wheelchair', ['yes', 'true', '1']),
           rangoPrecio: valorOInfo(tags.price || tags['price:range'] || tags.fee),
           precioAmigable: precioInterpretado,
           tipoCocina: valorOInfo(tags.cuisine),
-          estacionamiento: tags.parking === 'yes' || tags['parking:lane'] !== undefined,
-          wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
-          banos: tags.toilets === 'yes',
-          banosAccesibles: tags['toilets:wheelchair'] === 'yes',
-          terraza: tags.outdoor_seating === 'yes',
-          esFamiliar: tags.kids === 'yes',
-          mascotasPermitidas: tags.pets === 'yes' || tags.dog === 'yes',
-          romantico: tags.romantic === 'yes' || tags['view'] === 'yes',
+          estacionamiento: tagTieneValor(tags, 'parking', ['yes', 'true', '1']),
+          wifi: tagTieneValor(tags, 'internet_access', ['wlan', 'wifi', 'yes', 'true', '1']),
+          banos: tagTieneValor(tags, 'toilets', ['yes', 'true', '1']),
+          banosAccesibles: tagTieneValor(tags, 'toilets:wheelchair', ['yes', 'true', '1']),
+          terraza: tagTieneValor(tags, 'outdoor_seating', ['yes', 'true', '1']),
+          esFamiliar: tagTieneValor(tags, 'kids', ['yes', 'true', '1']),
+          mascotasPermitidas: tagTieneValor(tags, 'pets', ['yes', 'true', '1']) || tagTieneValor(tags, 'dog', ['yes', 'true', '1']),
+          romantico: tagTieneValor(tags, 'romantic', ['yes', 'true', '1']) || tagTieneValor(tags, 'view', ['yes', 'true', '1']),
           alAireLibre: ['park', 'mirador', 'jardin', 'attraction', 'ruta_natural', 'peak'].includes(categoria),
           cubierto: ['restaurant', 'museum', 'library', 'supermarket'].includes(categoria),
           idealParaFoto: tags.tourism === 'viewpoint' || tags.artwork_type !== undefined,
-          tieneWiFi: tags.internet_access === 'wlan',
-          reservaNecesaria: tags.reservation === 'yes',
+          tieneWiFi: tagTieneValor(tags, 'internet_access', ['wlan', 'wifi', 'yes', 'true', '1']),
+          reservaNecesaria: tagTieneValor(tags, 'reservation', ['yes', 'true', '1']),
           culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoria),
           nivelComodidad,
-          smokingPermitido: tags.smoking === 'yes',
-          cambioBebe: tags['baby_changing'] === 'yes',
-          aguaPotable: tags.drinking_water === 'yes',
+          smokingPermitido: tagTieneValor(tags, 'smoking', ['yes', 'true', '1']),
+          cambioBebe: tagTieneValor(tags, 'baby_changing', ['yes', 'true', '1']),
+          aguaPotable: tagTieneValor(tags, 'drinking_water', ['yes', 'true', '1']),
           cercaDeMontanas: ['peak', 'natural'].includes(categoria),
           cercaDeLagos: tags['natural'] === 'water' || tags['water'] === 'lake' || tags['waterway'] === 'river',
           cercaDeParques: ['park', 'jardin', 'leisure'].includes(categoria)
         };
 
-        // 🧮 Calcular puntaje
+        // Calcular puntaje
         let puntaje = 0;
         if (lugar.nombre !== 'Información no disponible') puntaje += 2;
         if (lugar.telefono !== 'Información no disponible') puntaje += 1;
@@ -183,7 +190,6 @@ app.get('/lugares', async (req, res) => {
         return lugar;
       });
 
-    // Ordenar por puntaje
     lugares.sort((a, b) => b.puntaje - a.puntaje);
 
     res.json(lugares);
