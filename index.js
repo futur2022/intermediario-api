@@ -30,7 +30,7 @@ const categoriasTurismoLocal = {
 };
 
 app.get('/lugares', async (req, res) => {
-  let { categoria, lat, lon, horario } = req.query;
+  const { categoria, lat, lon, horario } = req.query;
   console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon, horario });
 
   if (!categoria || !lat || !lon) {
@@ -38,7 +38,7 @@ app.get('/lugares', async (req, res) => {
   }
 
   if (!categoriasTurismoLocal[categoria]) {
-    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida en turismo local.` });
+    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida.` });
   }
 
   const latNum = parseFloat(lat);
@@ -77,7 +77,7 @@ app.get('/lugares', async (req, res) => {
     const elementos = response.data.elements || [];
     console.log('🎯 Elementos recibidos:', elementos.length);
 
-    let lugares = elementos
+    const lugares = elementos
       .filter(el => el.tags && el.tags.name)
       .map(el => {
         const tags = el.tags;
@@ -93,25 +93,22 @@ app.get('/lugares', async (req, res) => {
           sitioWeb: tags.website || null,
           descripcion: tags.description || null,
           accesible: tags.wheelchair === 'yes',
-          rangoPrecio: tags.price || tags.fee || tags.payment || null,
+          rangoPrecio: tags.price || tags['price:range'] || tags.fee || null,
           tipoCocina: tags.cuisine || null,
-          estacionamiento: tags.parking === 'yes',
+          estacionamiento: tags.parking === 'yes' || tags['parking:lane'] !== undefined,
           wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
           banos: tags.toilets === 'yes',
-          terraza: tags.outdoor_seating === 'yes'
+          terraza: tags.outdoor_seating === 'yes',
+          esFamiliar: tags.kids === 'yes',
+          mascotasPermitidas: tags.pets === 'yes' || tags.dog === 'yes',
+          romantico: tags.romantic === 'yes' || tags['view'] === 'yes',
+          alAireLibre: ['park', 'mirador', 'jardin', 'attraction', 'ruta_natural', 'peak'].includes(categoria),
+          cubierto: ['restaurant', 'museum', 'library', 'supermarket'].includes(categoria),
+          idealParaFoto: tags.tourism === 'viewpoint' || tags.artwork_type !== undefined,
+          tieneWiFi: tags.internet_access === 'wlan',
+          reservaNecesaria: tags.reservation === 'yes',
+          culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoria)
         };
-
-        // Generar tagsExtras dinámicos
-        const tagsExtras = [];
-        if (lugar.wifi) tagsExtras.push("📶 Wi-Fi");
-        if (lugar.estacionamiento) tagsExtras.push("🚗 Estacionamiento");
-        if (lugar.banos) tagsExtras.push("🚻 Baños");
-        if (lugar.terraza) tagsExtras.push("🌤️ Terraza");
-        if (lugar.accesible) tagsExtras.push("♿ Accesible");
-        if (lugar.tipoCocina) tagsExtras.push(`🍽️ ${lugar.tipoCocina}`);
-        if (lugar.rangoPrecio) tagsExtras.push(`💲 ${lugar.rangoPrecio}`);
-
-        lugar.tagsExtras = tagsExtras;
 
         // 🧮 Calcular puntaje
         let puntaje = 0;
@@ -122,18 +119,31 @@ app.get('/lugares', async (req, res) => {
         if (lugar.sitioWeb) puntaje += 1;
         if (lugar.descripcion) puntaje += 1;
         if (lugar.accesible) puntaje += 1;
+        if (lugar.tipoCocina) puntaje += 1;
+        if (lugar.rangoPrecio) puntaje += 1;
+        if (horario && lugar.horario?.toLowerCase().includes(horario.toLowerCase())) puntaje += 3;
 
-        if (horario && lugar.horario && lugar.horario.toLowerCase().includes(horario.toLowerCase())) {
-          puntaje += 3;
-        }
+        lugar.puntaje = puntaje;
 
-        return { ...lugar, puntaje };
+        // Etiquetas extra visuales
+        lugar.tagsExtras = [];
+        if (lugar.wifi) lugar.tagsExtras.push("📶 Wi-Fi");
+        if (lugar.estacionamiento) lugar.tagsExtras.push("🚗 Estacionamiento");
+        if (lugar.banos) lugar.tagsExtras.push("🚻 Baños");
+        if (lugar.terraza) lugar.tagsExtras.push("🌤️ Terraza");
+        if (lugar.accesible) lugar.tagsExtras.push("♿ Accesible");
+        if (lugar.tipoCocina) lugar.tagsExtras.push(`🍽️ ${lugar.tipoCocina}`);
+        if (lugar.rangoPrecio) lugar.tagsExtras.push(`💲 ${lugar.rangoPrecio}`);
+        if (lugar.mascotasPermitidas) lugar.tagsExtras.push("🐶 Pet Friendly");
+        if (lugar.romantico) lugar.tagsExtras.push("❤️ Romántico");
+
+        return lugar;
       });
 
-    // 🧠 Ordenar lugares por puntaje
+    // Ordenar por puntaje
     lugares.sort((a, b) => b.puntaje - a.puntaje);
 
-    // 🎯 Formatear la salida para el cliente
+    // Resultado final para el frontend
     const resultado = lugares.map(lugar => ({
       ...lugar,
       direccion: lugar.direccion || '📍 Dirección no disponible',
