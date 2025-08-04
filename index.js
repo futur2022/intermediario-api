@@ -29,6 +29,19 @@ const categoriasTurismoLocal = {
   lugar_secreto: [["place", "locality"], ["place", "isolated_dwelling"], ["tourism", "attraction"]]
 };
 
+function interpretarPrecio(tags) {
+  if (tags.fee === 'no' || tags.price === '0' || tags.price === 'free') {
+    return '💸 Entrada gratuita';
+  }
+  if (tags.fee === 'yes' || (tags.price && tags.price !== '0' && tags.price.toLowerCase() !== 'free')) {
+    return '💰 Entrada de pago';
+  }
+  if (tags['price:range'] || tags.price) {
+    return '💵 Costo aproximado';
+  }
+  return null;
+}
+
 app.get('/lugares', async (req, res) => {
   const { categoria, lat, lon, horario } = req.query;
   console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon, horario });
@@ -82,6 +95,15 @@ app.get('/lugares', async (req, res) => {
       .map(el => {
         const tags = el.tags;
 
+        // Interpretar precio en texto amigable
+        const precioInterpretado = interpretarPrecio(tags);
+
+        // Nivel de comodidad/clima (inferido)
+        let nivelComodidad = 'Exterior';
+        if (tags.indoor === 'yes' || tags.building) {
+          nivelComodidad = 'Interior';
+        }
+
         const lugar = {
           nombre: tags.name,
           categoria,
@@ -94,10 +116,12 @@ app.get('/lugares', async (req, res) => {
           descripcion: tags.description || null,
           accesible: tags.wheelchair === 'yes',
           rangoPrecio: tags.price || tags['price:range'] || tags.fee || null,
+          precioAmigable: precioInterpretado,
           tipoCocina: tags.cuisine || null,
           estacionamiento: tags.parking === 'yes' || tags['parking:lane'] !== undefined,
           wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
           banos: tags.toilets === 'yes',
+          banosAccesibles: tags['toilets:wheelchair'] === 'yes',
           terraza: tags.outdoor_seating === 'yes',
           esFamiliar: tags.kids === 'yes',
           mascotasPermitidas: tags.pets === 'yes' || tags.dog === 'yes',
@@ -107,7 +131,14 @@ app.get('/lugares', async (req, res) => {
           idealParaFoto: tags.tourism === 'viewpoint' || tags.artwork_type !== undefined,
           tieneWiFi: tags.internet_access === 'wlan',
           reservaNecesaria: tags.reservation === 'yes',
-          culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoria)
+          culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoria),
+          nivelComodidad,
+          smokingPermitido: tags.smoking === 'yes',
+          cambioBebe: tags['baby_changing'] === 'yes',
+          aguaPotable: tags.drinking_water === 'yes',
+          cercaDeMontanas: ['peak', 'natural'].includes(categoria),
+          cercaDeLagos: tags['natural'] === 'water' || tags['water'] === 'lake' || tags['waterway'] === 'river',
+          cercaDeParques: ['park', 'jardin', 'leisure'].includes(categoria)
         };
 
         // 🧮 Calcular puntaje
@@ -130,12 +161,17 @@ app.get('/lugares', async (req, res) => {
         if (lugar.wifi) lugar.tagsExtras.push("📶 Wi-Fi");
         if (lugar.estacionamiento) lugar.tagsExtras.push("🚗 Estacionamiento");
         if (lugar.banos) lugar.tagsExtras.push("🚻 Baños");
+        if (lugar.banosAccesibles) lugar.tagsExtras.push("♿ Baños accesibles");
         if (lugar.terraza) lugar.tagsExtras.push("🌤️ Terraza");
         if (lugar.accesible) lugar.tagsExtras.push("♿ Accesible");
         if (lugar.tipoCocina) lugar.tagsExtras.push(`🍽️ ${lugar.tipoCocina}`);
         if (lugar.rangoPrecio) lugar.tagsExtras.push(`💲 ${lugar.rangoPrecio}`);
+        if (lugar.precioAmigable) lugar.tagsExtras.push(lugar.precioAmigable);
         if (lugar.mascotasPermitidas) lugar.tagsExtras.push("🐶 Pet Friendly");
         if (lugar.romantico) lugar.tagsExtras.push("❤️ Romántico");
+        if (lugar.smokingPermitido) lugar.tagsExtras.push("🚬 Permite fumar");
+        if (lugar.cambioBebe) lugar.tagsExtras.push("👶 Cambiador de bebé");
+        if (lugar.aguaPotable) lugar.tagsExtras.push("💧 Agua potable");
 
         return lugar;
       });
