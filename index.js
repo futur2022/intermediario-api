@@ -92,6 +92,7 @@ app.get('/lugares', async (req, res) => {
           horario: el.tags.opening_hours || null,
           sitioWeb: el.tags.website || null,
           descripcion: el.tags.description || null,
+          accesible: el.tags.wheelchair === 'yes' ? true : false
         };
 
         // 🧮 Calcular puntaje
@@ -102,6 +103,7 @@ app.get('/lugares', async (req, res) => {
         if (lugar.horario) puntaje += 1;
         if (lugar.sitioWeb) puntaje += 1;
         if (lugar.descripcion) puntaje += 1;
+        if (lugar.accesible) puntaje += 1; // Opcional: dar 1 punto si es accesible
 
         if (horario && lugar.horario && lugar.horario.toLowerCase().includes(horario.toLowerCase())) {
           puntaje += 3;
@@ -121,6 +123,7 @@ app.get('/lugares', async (req, res) => {
       horario: lugar.horario || '⏰ No disponible',
       sitioWeb: lugar.sitioWeb || '🌐 No disponible',
       descripcion: lugar.descripcion || '📝 Sin descripción',
+      accesible: lugar.accesible // ♿ Se incluye directamente en el JSON
     }));
 
     console.log('✨ Lugares válidos enviados:', resultado.length);
