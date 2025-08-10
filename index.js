@@ -1,3 +1,4 @@
+// intermediario/index.js
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -61,7 +62,6 @@ function valorOInfo(valor) {
   return valor;
 }
 
-// Nueva función para construir dirección completa
 function construirDireccion(tags) {
   const partes = [
     tags['addr:housenumber'],
@@ -73,16 +73,27 @@ function construirDireccion(tags) {
   return partes.join(', ');
 }
 
+function elegirCategoriaAleatoria() {
+  const keys = Object.keys(categoriasTurismoLocal);
+  return keys[Math.floor(Math.random() * keys.length)];
+}
+
 app.get('/lugares', async (req, res) => {
   const { categoria, lat, lon, horario } = req.query;
   console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon, horario });
 
-  if (!categoria || !lat || !lon) {
-    return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
+  if (!lat || !lon) {
+    return res.status(400).json({ error: 'Faltan parámetros: lat o lon' });
   }
 
-  if (!categoriasTurismoLocal[categoria]) {
-    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida.` });
+  let categoriaUsada = categoria;
+  if (!categoriaUsada || categoriaUsada === 'random') {
+    categoriaUsada = elegirCategoriaAleatoria();
+    console.log('Categoria vacía o "random" detectada en intermediario. Se eligió:', categoriaUsada);
+  }
+
+  if (!categoriasTurismoLocal[categoriaUsada]) {
+    return res.status(400).json({ error: `Categoría '${categoriaUsada}' no reconocida.` });
   }
 
   const latNum = parseFloat(lat);
@@ -97,7 +108,7 @@ app.get('/lugares', async (req, res) => {
   const minLon = lonNum - delta;
   const maxLon = lonNum + delta;
 
-  const filtros = categoriasTurismoLocal[categoria]
+  const filtros = categoriasTurismoLocal[categoriaUsada]
     .map(([clave, valor]) => `
       node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
       way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
@@ -119,7 +130,7 @@ app.get('/lugares', async (req, res) => {
     });
 
     const elementos = response.data.elements || [];
-    console.log('🎯 Elementos recibidos:', elementos.length);
+    console.log('🎯 Elementos recibidos del Overpass:', elementos.length);
 
     const lugares = elementos
       .filter(el => el.tags && el.tags.name)
@@ -130,19 +141,17 @@ app.get('/lugares', async (req, res) => {
 
         const nivelComodidad = (tags.indoor === 'yes' || tags.building) ? 'Interior' : 'Exterior';
 
-        // Construir dirección completa
         const direccionCompleta = construirDireccion(tags);
 
-        // Mejorar rangoPrecio para evitar valores ambiguos (solo devolver si es texto legible)
         let rangoPrecio = valorOInfo(tags.price || tags['price:range'] || tags.fee);
         const valoresNoInformativos = ['yes', 'no', '0', 'free', ''];
-        if (valoresNoInformativos.includes(rangoPrecio.toString().toLowerCase())) {
+        if (typeof rangoPrecio === 'string' && valoresNoInformativos.includes(rangoPrecio.toLowerCase())) {
           rangoPrecio = 'Información no disponible';
         }
 
         const lugar = {
           nombre: valorOInfo(tags.name),
-          categoria,
+          categoria: categoriaUsada,
           lat: el.lat ?? el.center?.lat,
           lon: el.lon ?? el.center?.lon,
           direccion: direccionCompleta,
@@ -162,22 +171,21 @@ app.get('/lugares', async (req, res) => {
           esFamiliar: tagTieneValor(tags, 'kids', ['yes', 'true', '1']),
           mascotasPermitidas: tagTieneValor(tags, 'pets', ['yes', 'true', '1']) || tagTieneValor(tags, 'dog', ['yes', 'true', '1']),
           romantico: tagTieneValor(tags, 'romantic', ['yes', 'true', '1']) || tagTieneValor(tags, 'view', ['yes', 'true', '1']),
-          alAireLibre: ['park', 'mirador', 'jardin', 'attraction', 'ruta_natural', 'peak'].includes(categoria),
-          cubierto: ['restaurant', 'museum', 'library', 'supermarket'].includes(categoria),
+          alAireLibre: ['park', 'mirador', 'jardin', 'attraction', 'ruta_natural', 'peak'].includes(categoriaUsada),
+          cubierto: ['restaurant', 'museum', 'library', 'supermarket'].includes(categoriaUsada),
           idealParaFoto: tags.tourism === 'viewpoint' || tags.artwork_type !== undefined,
           tieneWiFi: tagTieneValor(tags, 'internet_access', ['wlan', 'wifi', 'yes', 'true', '1']),
           reservaNecesaria: tagTieneValor(tags, 'reservation', ['yes', 'true', '1']),
-          culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoria),
+          culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoriaUsada),
           nivelComodidad,
           smokingPermitido: tagTieneValor(tags, 'smoking', ['yes', 'true', '1']),
           cambioBebe: tagTieneValor(tags, 'baby_changing', ['yes', 'true', '1']),
           aguaPotable: tagTieneValor(tags, 'drinking_water', ['yes', 'true', '1']),
-          cercaDeMontanas: ['peak', 'natural'].includes(categoria),
+          cercaDeMontanas: ['peak', 'natural'].includes(categoriaUsada),
           cercaDeLagos: tags['natural'] === 'water' || tags['water'] === 'lake' || tags['waterway'] === 'river',
-          cercaDeParques: ['park', 'jardin', 'leisure'].includes(categoria)
+          cercaDeParques: ['park', 'jardin', 'leisure'].includes(categoriaUsada)
         };
 
-        // Calcular puntaje
         let puntaje = 0;
         if (lugar.nombre !== 'Información no disponible') puntaje += 2;
         if (lugar.telefono !== 'Información no disponible') puntaje += 1;
@@ -196,7 +204,6 @@ app.get('/lugares', async (req, res) => {
 
         lugar.puntaje = puntaje;
 
-        // Etiquetas extra visuales
         lugar.tagsExtras = [];
         if (lugar.wifi) lugar.tagsExtras.push("📶 Wi-Fi");
         if (lugar.estacionamiento) lugar.tagsExtras.push("🚗 Estacionamiento");
@@ -220,7 +227,7 @@ app.get('/lugares', async (req, res) => {
 
     res.json(lugares);
   } catch (error) {
-    console.error('🔥 Error Overpass:', error.message);
+    console.error('🔥 Error Overpass:', error?.message || error);
     res.status(500).json({ error: 'Error al obtener datos de Overpass' });
   }
 });
