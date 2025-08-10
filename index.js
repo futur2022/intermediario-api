@@ -29,7 +29,7 @@ const categoriasTurismoLocal = {
   lugar_secreto: [["place", "locality"], ["place", "isolated_dwelling"], ["tourism", "attraction"]]
 };
 
-// Función genérica para validar tags con variantes (ignora mayúsculas, espacios, guiones, subrayados)
+// Función para validar tags ignorando mayúsculas, espacios, guiones y subrayados
 function tagTieneValor(tags, clave, valoresValidos) {
   if (!tags || !clave || !valoresValidos) return false;
   const valor = tags[clave];
@@ -44,7 +44,7 @@ function interpretarPrecio(tags) {
   if (tagTieneValor(tags, 'fee', ['no']) || tagTieneValor(tags, 'price', ['0', 'free'])) {
     return '💸 Entrada gratuita';
   }
-  if (tagTieneValor(tags, 'fee', ['yes']) || 
+  if (tagTieneValor(tags, 'fee', ['yes']) ||
       (tags.price && !['0','free'].includes(String(tags.price).toLowerCase()))) {
     return '💰 Entrada de pago';
   }
@@ -90,7 +90,7 @@ app.get('/lugares', async (req, res) => {
     return res.status(400).json({ error: 'Latitud o longitud inválidas' });
   }
 
-  const delta = 0.1;
+  const delta = 0.1; // ~10 km aprox
   const minLat = latNum - delta;
   const maxLat = latNum + delta;
   const minLon = lonNum - delta;
@@ -185,7 +185,7 @@ app.get('/lugares', async (req, res) => {
         if (lugar.tipoCocina !== 'Información no disponible') puntaje += 1;
         if (lugar.rangoPrecio !== 'Información no disponible') puntaje += 1;
         if (
-          horario && 
+          horario &&
           lugar.horario !== 'Información no disponible' &&
           lugar.horario.toLowerCase().includes(String(horario).toLowerCase())
         ) puntaje += 3;
