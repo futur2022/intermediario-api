@@ -1,4 +1,3 @@
-// intermediario/index.js
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -46,7 +45,7 @@ function interpretarPrecio(tags) {
     return '💸 Entrada gratuita';
   }
   if (tagTieneValor(tags, 'fee', ['yes']) || 
-      (tags.price && !['0','free'].includes(tags.price.toLowerCase()))) {
+      (tags.price && !['0','free'].includes(String(tags.price).toLowerCase()))) {
     return '💰 Entrada de pago';
   }
   if (tags['price:range'] || tags.price) {
@@ -73,27 +72,16 @@ function construirDireccion(tags) {
   return partes.join(', ');
 }
 
-function elegirCategoriaAleatoria() {
-  const keys = Object.keys(categoriasTurismoLocal);
-  return keys[Math.floor(Math.random() * keys.length)];
-}
-
 app.get('/lugares', async (req, res) => {
   const { categoria, lat, lon, horario } = req.query;
   console.log("🧙 Consulta mágica recibida:", { categoria, lat, lon, horario });
 
-  if (!lat || !lon) {
-    return res.status(400).json({ error: 'Faltan parámetros: lat o lon' });
+  if (!categoria || !lat || !lon) {
+    return res.status(400).json({ error: 'Faltan parámetros: categoria, lat o lon' });
   }
 
-  let categoriaUsada = categoria;
-  if (!categoriaUsada || categoriaUsada === 'random') {
-    categoriaUsada = elegirCategoriaAleatoria();
-    console.log('Categoria vacía o "random" detectada en intermediario. Se eligió:', categoriaUsada);
-  }
-
-  if (!categoriasTurismoLocal[categoriaUsada]) {
-    return res.status(400).json({ error: `Categoría '${categoriaUsada}' no reconocida.` });
+  if (!categoriasTurismoLocal[categoria]) {
+    return res.status(400).json({ error: `Categoría '${categoria}' no reconocida.` });
   }
 
   const latNum = parseFloat(lat);
@@ -108,7 +96,7 @@ app.get('/lugares', async (req, res) => {
   const minLon = lonNum - delta;
   const maxLon = lonNum + delta;
 
-  const filtros = categoriasTurismoLocal[categoriaUsada]
+  const filtros = categoriasTurismoLocal[categoria]
     .map(([clave, valor]) => `
       node[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
       way[${clave}=${valor}](${minLat},${minLon},${maxLat},${maxLon});
@@ -130,7 +118,7 @@ app.get('/lugares', async (req, res) => {
     });
 
     const elementos = response.data.elements || [];
-    console.log('🎯 Elementos recibidos del Overpass:', elementos.length);
+    console.log('🎯 Elementos recibidos:', elementos.length);
 
     const lugares = elementos
       .filter(el => el.tags && el.tags.name)
@@ -145,19 +133,19 @@ app.get('/lugares', async (req, res) => {
 
         let rangoPrecio = valorOInfo(tags.price || tags['price:range'] || tags.fee);
         const valoresNoInformativos = ['yes', 'no', '0', 'free', ''];
-        if (typeof rangoPrecio === 'string' && valoresNoInformativos.includes(rangoPrecio.toLowerCase())) {
+        if (valoresNoInformativos.includes(String(rangoPrecio).toLowerCase())) {
           rangoPrecio = 'Información no disponible';
         }
 
         const lugar = {
           nombre: valorOInfo(tags.name),
-          categoria: categoriaUsada,
+          categoria,
           lat: el.lat ?? el.center?.lat,
           lon: el.lon ?? el.center?.lon,
           direccion: direccionCompleta,
-          telefono: valorOInfo(tags.phone),
+          telefono: valorOInfo(tags.phone || tags['contact:phone']),
           horario: valorOInfo(tags.opening_hours),
-          sitioWeb: valorOInfo(tags.website),
+          sitioWeb: valorOInfo(tags.website || tags['contact:website']),
           descripcion: valorOInfo(tags.description),
           accesible: tagTieneValor(tags, 'wheelchair', ['yes', 'true', '1']),
           rangoPrecio,
@@ -171,19 +159,19 @@ app.get('/lugares', async (req, res) => {
           esFamiliar: tagTieneValor(tags, 'kids', ['yes', 'true', '1']),
           mascotasPermitidas: tagTieneValor(tags, 'pets', ['yes', 'true', '1']) || tagTieneValor(tags, 'dog', ['yes', 'true', '1']),
           romantico: tagTieneValor(tags, 'romantic', ['yes', 'true', '1']) || tagTieneValor(tags, 'view', ['yes', 'true', '1']),
-          alAireLibre: ['park', 'mirador', 'jardin', 'attraction', 'ruta_natural', 'peak'].includes(categoriaUsada),
-          cubierto: ['restaurant', 'museum', 'library', 'supermarket'].includes(categoriaUsada),
+          alAireLibre: ['park', 'mirador', 'jardin', 'attraction', 'ruta_natural', 'peak'].includes(categoria),
+          cubierto: ['restaurant', 'museum', 'library', 'supermarket'].includes(categoria),
           idealParaFoto: tags.tourism === 'viewpoint' || tags.artwork_type !== undefined,
           tieneWiFi: tagTieneValor(tags, 'internet_access', ['wlan', 'wifi', 'yes', 'true', '1']),
           reservaNecesaria: tagTieneValor(tags, 'reservation', ['yes', 'true', '1']),
-          culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoriaUsada),
+          culturaLocal: ['museum', 'monumento', 'centro_cultural'].includes(categoria),
           nivelComodidad,
           smokingPermitido: tagTieneValor(tags, 'smoking', ['yes', 'true', '1']),
           cambioBebe: tagTieneValor(tags, 'baby_changing', ['yes', 'true', '1']),
           aguaPotable: tagTieneValor(tags, 'drinking_water', ['yes', 'true', '1']),
-          cercaDeMontanas: ['peak', 'natural'].includes(categoriaUsada),
+          cercaDeMontanas: ['peak', 'natural'].includes(categoria),
           cercaDeLagos: tags['natural'] === 'water' || tags['water'] === 'lake' || tags['waterway'] === 'river',
-          cercaDeParques: ['park', 'jardin', 'leisure'].includes(categoriaUsada)
+          cercaDeParques: ['park', 'jardin', 'leisure'].includes(categoria)
         };
 
         let puntaje = 0;
@@ -199,7 +187,7 @@ app.get('/lugares', async (req, res) => {
         if (
           horario && 
           lugar.horario !== 'Información no disponible' &&
-          lugar.horario.toLowerCase().includes(horario.toLowerCase())
+          lugar.horario.toLowerCase().includes(String(horario).toLowerCase())
         ) puntaje += 3;
 
         lugar.puntaje = puntaje;
